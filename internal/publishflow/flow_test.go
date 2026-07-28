@@ -53,7 +53,7 @@ func TestPublishOfficialPropagatesVerifiedArtifactAndRetryPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Official == nil || !result.Official.Published || result.Private != nil || published.PackageID != "cloud.lazycat.example" || published.SHA256 != artifactSHA || published.Changelog != "Release notes" || strings.Join(published.Locales, ",") != "zh,en" {
+	if result.Official == nil || !result.Official.Published || result.Private != nil || published.ProjectRoot != "/repo" || published.PackageID != "cloud.lazycat.example" || published.SHA256 != artifactSHA || published.Changelog != "Release notes" || strings.Join(published.Locales, ",") != "zh,en" {
 		t.Fatalf("result=%#v request=%#v", result, published)
 	}
 	if published.Retry != cfg.Stores.Official.Retry || published.Logger != logger {

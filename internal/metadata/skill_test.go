@@ -470,6 +470,42 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 	}
 }
 
+func TestOfficialScreenshotSubmissionDocumentationContract(t *testing.T) {
+	root := filepath.Join("..", "..")
+	files := map[string][]string{
+		filepath.Join("skills", "lazycat-github-action", "SKILL.md"): {
+			"screenshot_pc_files", "screenshot_mobile_files", "Both support flags default to false",
+			"authenticated developer API", "pending review", "commit and push", "project-confirmed viewport",
+			"2-8 screenshots", "3-8", "15 MiB", "320-3840", "center-crops it to 16:9",
+		},
+		filepath.Join("skills", "lazycat-github-action", "references", "configuration.md"): {
+			"/api/v3/developer/app/list", "screenshot_pc_files", "screenshot_mobile_files",
+			"Both support flags default to false", "Information already approved", "Review already pending",
+			"CONFLICT", "commit and push", "Remote URLs are unsupported", "15 MiB", "320-3840",
+		},
+		"README.md": {
+			"screenshot_pc_files", "screenshot_mobile_files", "agent-browser", "committed and pushed",
+			"public catalog", "pending review", "15 MiB", "320 and 3840", "center-cropped to 16:9",
+		},
+		"README.zh-CN.md": {
+			"screenshot_pc_files", "screenshot_mobile_files", "agent-browser", "提交并推送",
+			"匿名公开目录", "待审核任务", "15 MiB", "320-3840", "居中裁剪为 16:9",
+		},
+	}
+	for name, requiredValues := range files {
+		data, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(data)
+		for _, required := range requiredValues {
+			if !strings.Contains(text, required) {
+				t.Fatalf("%s is missing official screenshot contract %q", name, required)
+			}
+		}
+	}
+}
+
 func markdownSection(text, heading string) string {
 	start := strings.Index(text, heading)
 	if start < 0 {

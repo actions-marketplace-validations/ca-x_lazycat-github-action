@@ -239,8 +239,20 @@ stores:
     application:
       language: ZH
       name: " Example "
+      brief: " Collaborative workspace "
+      description: " Long description "
+      keywords: " agents, collaboration "
       source: " https://github.com/acme/example "
       source_author: " Acme "
+      support_pc: true
+      support_mobile: true
+      screenshot_pc_files:
+        - " .github/screenshots/pc-one.png "
+        - .github/screenshots/pc-two.jpg
+      screenshot_mobile_files:
+        - .github/screenshots/mobile-one.png
+        - .github/screenshots/mobile-two.png
+        - .github/screenshots/mobile-three.png
   private:
     enabled: true
     skip_if_version_exists: true
@@ -254,8 +266,12 @@ stores:
 				if strings.Join(got.Stores.Official.Locales, ",") != "zh,en" {
 					t.Fatalf("official locales=%v", got.Stores.Official.Locales)
 				}
-				if got.Stores.Official.Application.Language != "zh" || got.Stores.Official.Application.Name != "Example" {
+				application := got.Stores.Official.Application
+				if application.Language != "zh" || application.Name != "Example" || application.Brief != "Collaborative workspace" || application.Description != "Long description" || application.Keywords != "agents, collaboration" {
 					t.Fatalf("official application=%#v", got.Stores.Official.Application)
+				}
+				if !application.SupportPC || !application.SupportMobile || strings.Join(application.ScreenshotPCFiles, ",") != ".github/screenshots/pc-one.png,.github/screenshots/pc-two.jpg" || len(application.ScreenshotMobileFiles) != 3 {
+					t.Fatalf("official application screenshots=%#v", application)
 				}
 				if got.Stores.Private.Name != "Private Example" || got.Stores.Private.Summary != "Private summary" {
 					t.Fatalf("private store=%#v", got.Stores.Private)
@@ -607,6 +623,35 @@ images:
 			}
 			if test.check != nil {
 				test.check(t, got)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsIncompleteOfficialApplicationScreenshots(t *testing.T) {
+	tests := []struct {
+		name    string
+		fields  string
+		wantErr string
+	}{
+		{name: "no supported platform", fields: "brief: Example\n", wantErr: "support_pc or support_mobile"},
+		{name: "brief required", fields: "support_pc: true\nscreenshot_pc_files: [one.png, two.png]\n", wantErr: "brief is required"},
+		{name: "desktop needs two screenshots", fields: "brief: Example\nsupport_pc: true\nscreenshot_pc_files: [one.png]\n", wantErr: "at least two"},
+		{name: "mobile needs three screenshots", fields: "brief: Example\nsupport_mobile: true\nscreenshot_mobile_files: [one.png, two.png]\n", wantErr: "at least three"},
+		{name: "desktop screenshots need support", fields: "brief: Example\nsupport_mobile: true\nscreenshot_pc_files: [one.png, two.png]\nscreenshot_mobile_files: [one.png, two.png, three.png]\n", wantErr: "require support_pc=true"},
+		{name: "screenshots have maximum", fields: "brief: Example\nsupport_pc: true\nscreenshot_pc_files: [1.png, 2.png, 3.png, 4.png, 5.png, 6.png, 7.png, 8.png, 9.png]\n", wantErr: "at most eight"},
+		{name: "screenshot path escapes root", fields: "brief: Example\nsupport_pc: true\nscreenshot_pc_files: [../one.png, two.png]\n", wantErr: "screenshot_pc_files"},
+		{name: "screenshot extension", fields: "brief: Example\nsupport_pc: true\nscreenshot_pc_files: [one.gif, two.png]\n", wantErr: "PNG or JPEG"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			filename := filepath.Join(t.TempDir(), "lazycat.yml")
+			data := "version: 1\nproject: {}\nupdate:\n  version_source:\n    type: git\nstores:\n  official:\n    enabled: true\n    create_if_missing: true\n    application:\n" + indent(test.fields, 6)
+			if err := os.WriteFile(filename, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := config.Load(filename); err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("err=%v yaml=\n%s", err, data)
 			}
 		})
 	}

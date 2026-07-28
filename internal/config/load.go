@@ -102,8 +102,13 @@ func applyDefaults(value *Config) {
 		value.Stores.Official.Application.Language = "zh"
 	}
 	value.Stores.Official.Application.Name = strings.TrimSpace(value.Stores.Official.Application.Name)
+	value.Stores.Official.Application.Brief = strings.TrimSpace(value.Stores.Official.Application.Brief)
+	value.Stores.Official.Application.Description = strings.TrimSpace(value.Stores.Official.Application.Description)
+	value.Stores.Official.Application.Keywords = strings.TrimSpace(value.Stores.Official.Application.Keywords)
 	value.Stores.Official.Application.Source = strings.TrimSpace(value.Stores.Official.Application.Source)
 	value.Stores.Official.Application.SourceAuthor = strings.TrimSpace(value.Stores.Official.Application.SourceAuthor)
+	value.Stores.Official.Application.ScreenshotPCFiles = normalizeProjectPaths(value.Stores.Official.Application.ScreenshotPCFiles)
+	value.Stores.Official.Application.ScreenshotMobileFiles = normalizeProjectPaths(value.Stores.Official.Application.ScreenshotMobileFiles)
 	value.Stores.Private.Name = strings.TrimSpace(value.Stores.Private.Name)
 	value.Stores.Private.Summary = strings.TrimSpace(value.Stores.Private.Summary)
 	for index := range value.Build.Toolchains {
@@ -171,6 +176,9 @@ func validate(value Config) error {
 	}
 	if !value.Stores.Official.CreateIfMissing && hasOfficialApplication(value.Stores.Official.Application) {
 		return errors.New("official application metadata requires create_if_missing=true")
+	}
+	if err := validateOfficialApplication(value.Stores.Official.Application); err != nil {
+		return err
 	}
 	if value.Stores.Official.Retry.Enabled {
 		retry := value.Stores.Official.Retry
@@ -325,7 +333,60 @@ func normalizeLocales(locales []string) []string {
 }
 
 func hasOfficialApplication(application OfficialApplication) bool {
-	return application.Name != "" || application.Source != "" || application.SourceAuthor != "" || application.Language != "zh"
+	return application.Name != "" || application.Source != "" || application.SourceAuthor != "" || application.Language != "zh" || application.HasSubmissionInfo()
+}
+
+func normalizeProjectPaths(paths []string) []string {
+	result := make([]string, 0, len(paths))
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path != "" {
+			result = append(result, filepath.Clean(path))
+		}
+	}
+	return result
+}
+
+func validateOfficialApplication(application OfficialApplication) error {
+	if !application.HasSubmissionInfo() {
+		return nil
+	}
+	if application.Brief == "" {
+		return errors.New("official application brief is required for automatic information submission")
+	}
+	if !application.SupportPC && !application.SupportMobile {
+		return errors.New("official application automatic information submission requires support_pc or support_mobile")
+	}
+	if application.SupportPC && len(application.ScreenshotPCFiles) < 2 {
+		return errors.New("official application support_pc requires at least two screenshot_pc_files")
+	}
+	if !application.SupportPC && len(application.ScreenshotPCFiles) > 0 {
+		return errors.New("official application screenshot_pc_files require support_pc=true")
+	}
+	if application.SupportMobile && len(application.ScreenshotMobileFiles) < 3 {
+		return errors.New("official application support_mobile requires at least three screenshot_mobile_files")
+	}
+	if !application.SupportMobile && len(application.ScreenshotMobileFiles) > 0 {
+		return errors.New("official application screenshot_mobile_files require support_mobile=true")
+	}
+	if len(application.ScreenshotPCFiles) > 8 || len(application.ScreenshotMobileFiles) > 8 {
+		return errors.New("official application supports at most eight screenshots per platform")
+	}
+	for label, paths := range map[string][]string{
+		"screenshot_pc_files": application.ScreenshotPCFiles, "screenshot_mobile_files": application.ScreenshotMobileFiles,
+	} {
+		for _, path := range paths {
+			if err := validateProjectPath(label, path); err != nil {
+				return err
+			}
+			switch strings.ToLower(filepath.Ext(path)) {
+			case ".png", ".jpg", ".jpeg":
+			default:
+				return fmt.Errorf("%s path %q must use PNG or JPEG", label, path)
+			}
+		}
+	}
+	return nil
 }
 
 func validateImageRule(image Image) error {

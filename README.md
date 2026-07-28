@@ -4,7 +4,7 @@
 
 `ca-x/lazycat-github-action` checks Docker image versions, updates explicit LazyCat Manifest targets, builds LPK files, creates update pull requests, and attaches validated LPK files to GitHub Releases.
 
-The Action uses [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.3.4`. Its compatibility baseline is `@lazycatcloud/lzc-cli` `2.0.9`.
+The Action uses [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.3.5`. Its compatibility baseline is `@lazycatcloud/lzc-cli` `2.0.9`.
 
 Current scope:
 
@@ -485,11 +485,27 @@ stores:
     application:
       language: zh
       name: Example App
+      brief: A focused workspace for collaborative agents
+      description: A longer store description shown on the application page.
+      keywords: agents, collaboration, workspace
       source: https://github.com/acme/example
       source_author: acme
+      support_pc: true
+      support_mobile: true
+      screenshot_pc_files:
+        - .github/screenshots/pc-1.png
+        - .github/screenshots/pc-2.png
+      screenshot_mobile_files:
+        - .github/screenshots/mobile-1.png
+        - .github/screenshots/mobile-2.png
+        - .github/screenshots/mobile-3.png
 ```
 
 `create_if_missing: false` publishes only to an application that already exists. When creation is enabled, `application.name` defaults to `package.yml.name`; `language` defaults to `zh`. Official mode enforces the lzc-cli-compatible preferences, including official locales, an icon no larger than 200 KB, SemVer metadata, and LazyCat Registry runtime images. General compatibility warnings such as an unknown `container_name` remain visible but do not block the build. Only warnings classified as official-store warnings block official publication, and they never block a private-only workflow. Any configured `direct` or `mirror` image makes configuration fail before publishing.
+
+The application-information fields are optional. Adding `brief`, `description`, `keywords`, either support flag as true, or either screenshot list enables authenticated first-submission state detection through the developer API; `language`, `name`, `source`, and `source_author` alone retain create-only behavior. Both support flags default to false. The Action does not infer first submission from the public catalog. It distinguishes a missing application, an application whose information is incomplete, approved information, and an existing pending review. Approved information is not uploaded again. A pending review fails closed before any LPK or screenshot upload.
+
+Screenshot files must already be committed and pushed to a ref the workflow will checkout. An agent may use `agent-browser` to capture project-confirmed desktop and mobile views, save them under a directory such as `.github/screenshots/`, and then run this Action. The Action never downloads screenshots from remote URLs. Desktop support requires 2-8 files and mobile support requires 3-8 files. Inputs must be PNG or JPEG, at most 15 MiB, and between 320 and 3840 pixels in both dimensions. Each image is center-cropped to 16:9 and uploaded as PNG. Paths outside `project.root`, symbolic links, non-regular files, and unsafe filenames are rejected. Safe failures include the repository-relative screenshot path and an allowlisted reason without exposing runner paths or credentials.
 
 `skip_if_version_exists: true` performs an anonymous exact-package lookup after the LPK is verified. An equal version succeeds with `published: false`, `skipped: true`, and `skipReason: version-already-online`. When both values are valid SemVer, an online version newer than the candidate is also skipped with `skipReason: online-version-newer` while `update.allow_downgrade: false`; explicit `allow_downgrade: true` permits the rollback submission. Non-SemVer values use exact equality only and are never ordered lexically. Skips happen without resolving a developer token or submitting the LPK. Not-found continues publishing; any other lookup failure stops the operation. The option defaults to `false`, and `dry-run` remains network-free.
 

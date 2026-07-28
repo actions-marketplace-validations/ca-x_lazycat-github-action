@@ -110,10 +110,22 @@ type OfficialRetry struct {
 }
 
 type OfficialApplication struct {
-	Language     string `yaml:"language"`
-	Name         string `yaml:"name"`
-	Source       string `yaml:"source"`
-	SourceAuthor string `yaml:"source_author"`
+	Language              string   `yaml:"language"`
+	Name                  string   `yaml:"name"`
+	Brief                 string   `yaml:"brief"`
+	Description           string   `yaml:"description"`
+	Keywords              string   `yaml:"keywords"`
+	Source                string   `yaml:"source"`
+	SourceAuthor          string   `yaml:"source_author"`
+	SupportPC             bool     `yaml:"support_pc"`
+	SupportMobile         bool     `yaml:"support_mobile"`
+	ScreenshotPCFiles     []string `yaml:"screenshot_pc_files"`
+	ScreenshotMobileFiles []string `yaml:"screenshot_mobile_files"`
+}
+
+func (application OfficialApplication) HasSubmissionInfo() bool {
+	return application.Brief != "" || application.Description != "" || application.Keywords != "" ||
+		application.SupportPC || application.SupportMobile || len(application.ScreenshotPCFiles) > 0 || len(application.ScreenshotMobileFiles) > 0
 }
 
 type PrivateStore struct {

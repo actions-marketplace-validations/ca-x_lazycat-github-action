@@ -186,6 +186,10 @@ Official publishing requires:
 - official lint compliance, including locales and icon size at most 200 KB;
 - `LAZYCAT_TOKEN`, `LZC_CLI_TOKEN`, username/password, or an explicit `token-file`.
 
+Automatic first information submission is optional and is enabled only when `stores.official.create_if_missing: true` plus at least one of `brief`, `description`, `keywords`, `support_pc: true`, `support_mobile: true`, `screenshot_pc_files`, or `screenshot_mobile_files` is configured. `language`, `name`, `source`, and `source_author` alone retain the legacy create-only behavior. Both support flags default to false. Use the authenticated developer API for exact first-submission state; never infer it from the anonymous public catalog. The supported states are missing application, incomplete information, approved information, and pending review. Approved information is preserved without re-uploading screenshots. A pending review must fail closed before LPK or screenshot upload.
+
+Screenshot fields accept only committed project-relative PNG/JPEG files. An agent using `agent-browser` must capture the PC/mobile views into the repository, commit and push the files to a ref the workflow will checkout, and then run publication. Choose project-confirmed viewport, DPR, authentication state, and test data rather than inventing them. Do not configure remote screenshot URLs. PC support requires 2-8 screenshots; mobile support requires 3-8. Each source must be at most 15 MiB and 320-3840 pixels in both dimensions; the Action center-crops it to 16:9 and uploads PNG. Paths outside `project.root`, symbolic links, and non-regular files are invalid. Read [references/configuration.md](references/configuration.md) for the complete optional YAML contract.
+
 Use this complete retry shape when the project explicitly opts in:
 
 ```yaml

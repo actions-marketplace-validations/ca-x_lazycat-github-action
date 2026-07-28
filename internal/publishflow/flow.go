@@ -255,7 +255,7 @@ func (flow Flow) publishOfficial(ctx context.Context, request Request, result Re
 		return Result{}, errors.New("official publishing requires a changelog")
 	}
 	input := official.Request{
-		LPKPath: result.Artifact.Path, FileName: filepath.Base(result.Artifact.Path),
+		ProjectRoot: request.Project.Root, LPKPath: result.Artifact.Path, FileName: filepath.Base(result.Artifact.Path),
 		PackageID: result.Artifact.PackageID, Version: result.Artifact.Version, SHA256: result.Artifact.SHA256,
 		Changelog: changelog, Locales: request.Config.Stores.Official.Locales,
 		CreateIfMissing: request.Config.Stores.Official.CreateIfMissing,

@@ -139,11 +139,38 @@ stores:
     application:
       language: zh
       name: Example App
+      brief: A focused workspace for collaborative agents
+      description: A longer store description shown on the application page.
+      keywords: agents, collaboration, workspace
       source: https://github.com/acme/example
       source_author: acme
+      support_pc: true
+      support_mobile: true
+      screenshot_pc_files:
+        - .github/screenshots/pc-1.png
+        - .github/screenshots/pc-2.png
+      screenshot_mobile_files:
+        - .github/screenshots/mobile-1.png
+        - .github/screenshots/mobile-2.png
+        - .github/screenshots/mobile-3.png
 ```
 
 Defaults: locales `zh,en`; language `zh`; application name from `package.yml.name`. Application metadata is valid only with `create_if_missing: true`.
+
+The additional information and screenshot fields are optional. Automatic information submission is enabled when any of `brief`, `description`, `keywords`, `support_pc: true`, `support_mobile: true`, `screenshot_pc_files`, or `screenshot_mobile_files` is present. `language`, `name`, `source`, and `source_author` alone retain create-only behavior. Both support flags default to false. When enabled, authenticated state detection uses `/api/v3/developer/app/list` with an exact package match; the public catalog is not a first-submission signal. The Action distinguishes:
+
+| State | Behavior |
+|---|---|
+| Application missing | Create it when `create_if_missing: true`, then submit LPK and information together. |
+| Application exists, information incomplete | Upload configured screenshots and submit one information review with the LPK. |
+| Information already approved | Submit only the new LPK/version; do not upload or replace screenshots. |
+| Review already pending | Stop with `CONFLICT` before uploading the LPK or screenshots. |
+
+`brief` is required when automatic information submission is enabled. At least one of `support_pc` or `support_mobile` must be true. PC support requires 2-8 `screenshot_pc_files`; mobile support requires 3-8 `screenshot_mobile_files`. A screenshot list is invalid when its matching support flag is false.
+
+Screenshot paths are relative to `project.root` and must name committed local PNG/JPEG regular files. Remote URLs are unsupported. Inputs are limited to 15 MiB and 320-3840 pixels in both dimensions, then center-cropped to 16:9 and encoded as PNG. Parent traversal, absolute paths, symbolic links, unsupported formats, and unsafe filenames fail closed. Safe Action diagnostics may expose only the repository-relative screenshot path and an allowlisted reason.
+
+For agent-generated screenshots, use `agent-browser` to open the application at project-confirmed PC/mobile viewports and states, capture files such as `.github/screenshots/pc-1.png` and `.github/screenshots/mobile-1.png`, verify the minimum counts, then commit and push them to a ref the reusable workflow will checkout. The Action reads the checkout; an uncommitted or unpushed file on the agent's machine is unavailable to GitHub Actions.
 
 `skip_if_version_exists` defaults to false. When true, the Action anonymously queries the exact package after LPK verification. Equality skips with `skipReason: version-already-online`. When both values are valid SemVer, a newer online version skips with `skipReason: online-version-newer` while `allow_downgrade: false`; explicit `allow_downgrade: true` permits publishing. A non-SemVer value uses exact equality only. All skips happen before resolving official credentials. Not-found continues; other lookup errors fail closed. `dry-run` does not query.
 

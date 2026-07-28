@@ -1,13 +1,16 @@
 package version
 
-import "github.com/ca-x/lazycat-github-action/internal/platform"
+import (
+	"github.com/ca-x/lazycat-github-action/internal/platform"
+	toolkitversion "github.com/lib-x/lzc-toolkit-go/version"
+)
 
 var ActionVersion = "dev"
 
 const (
-	ToolkitVersion      = "v0.3.4"
-	ReferenceCLIPackage = "@lazycatcloud/lzc-cli"
-	ReferenceCLIVersion = "2.0.9"
+	ToolkitVersion      = "v" + toolkitversion.SDKVersion
+	ReferenceCLIPackage = toolkitversion.ReferenceCLIPackage
+	ReferenceCLIVersion = toolkitversion.ReferenceCLIVersion
 )
 
 type BuildInfo struct {

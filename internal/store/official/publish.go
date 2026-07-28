@@ -1,11 +1,13 @@
 package official
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -23,6 +25,7 @@ import (
 	"github.com/cloudflare/backoff"
 	lpkgo "github.com/lib-x/lzc-toolkit-go"
 	"github.com/lib-x/lzc-toolkit-go/appstore"
+	appmedia "github.com/lib-x/lzc-toolkit-go/appstore/media"
 	"github.com/lib-x/lzc-toolkit-go/auth"
 )
 
@@ -35,6 +38,7 @@ const (
 
 type Request struct {
 	Provider        auth.TokenProvider
+	ProjectRoot     string
 	LPKPath         string
 	FileName        string
 	PackageID       string
@@ -150,12 +154,32 @@ func (publisher Publisher) Publish(ctx context.Context, request Request) (Result
 		}
 	}
 	client := appstore.New(appstore.Options{BaseURL: baseURL, HTTPClient: httpClient, Token: auth.StaticToken(token)})
+	stateAware := request.Application.HasSubmissionInfo()
+	var applicationInfos []appstore.ApplicationInfo
+	if stateAware {
+		state, err := client.ApplicationState(ctx, packageID)
+		if err != nil {
+			return Result{}, sanitizePublishError(err)
+		}
+		if state.ReviewPending {
+			return Result{}, publishError(lpkgo.CodeConflict, errors.New("official application already has a pending review"))
+		}
+		if !state.Exists && !request.CreateIfMissing {
+			return Result{}, publishError(lpkgo.CodeNotFound, errors.New("official application does not exist"))
+		}
+		if !state.InformationReady {
+			applicationInfos, err = prepareApplicationInfos(ctx, client, request, application)
+			if err != nil {
+				return Result{}, err
+			}
+		}
+	}
 	created := false
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if retryAfter != nil {
 			retryAfter.Reset()
 		}
-		result, err := publishAttempt(ctx, request, client, httpClient, baseURL, token, packageID, version, digest, filename, application, changelogs)
+		result, err := publishAttempt(ctx, request, client, httpClient, baseURL, token, packageID, version, digest, filename, application, applicationInfos, stateAware, changelogs)
 		created = created || result.Created
 		if err == nil {
 			result.Created = created
@@ -251,11 +275,28 @@ func publishAttempt(
 	httpClient *http.Client,
 	baseURL, token, packageID, version, digest, filename string,
 	application *appstore.CreateApplicationRequest,
+	applicationInfos []appstore.ApplicationInfo,
+	stateAware bool,
 	changelogs map[string]string,
 ) (Result, error) {
-	exists, err := client.CheckApplication(ctx, packageID)
-	if err != nil {
-		return Result{}, sanitizePublishError(err)
+	exists := false
+	informationReady := true
+	if stateAware {
+		state, err := client.ApplicationState(ctx, packageID)
+		if err != nil {
+			return Result{}, sanitizePublishError(err)
+		}
+		if state.ReviewPending {
+			return Result{}, publishError(lpkgo.CodeConflict, errors.New("official application already has a pending review"))
+		}
+		exists = state.Exists
+		informationReady = state.InformationReady
+	} else {
+		var err error
+		exists, err = client.CheckApplication(ctx, packageID)
+		if err != nil {
+			return Result{}, sanitizePublishError(err)
+		}
 	}
 	created := false
 	if !exists {
@@ -277,13 +318,106 @@ func publishAttempt(
 	if uploadPackage != packageID || uploadVersion != version || uploadDigest != digest {
 		return Result{Created: created}, markNonRetryable(publishError(lpkgo.CodeRemoteUnavailable, errors.New("official upload metadata does not match the verified LPK")))
 	}
-	if err := submitReview(ctx, httpClient, baseURL, token, upload, changelogs); err != nil {
+	infos := []appstore.ApplicationInfo(nil)
+	if stateAware && !informationReady {
+		infos = applicationInfos
+	}
+	if err := submitReview(ctx, httpClient, baseURL, token, upload, infos, changelogs); err != nil {
 		return Result{Created: created}, err
 	}
 	return Result{
 		Published: true, Created: created, PackageID: uploadPackage, Version: uploadVersion,
 		UploadURL: strings.TrimSpace(upload.URL), SHA256: uploadDigest,
 	}, nil
+}
+
+func prepareApplicationInfos(
+	ctx context.Context,
+	client *appstore.Client,
+	request Request,
+	application *appstore.CreateApplicationRequest,
+) ([]appstore.ApplicationInfo, error) {
+	if application == nil || strings.TrimSpace(request.ProjectRoot) == "" {
+		return nil, publishError(lpkgo.CodeInvalidConfig, errors.New("official automatic application information requires create_if_missing and a project root"))
+	}
+	upload := func(paths []string) ([]string, error) {
+		result := make([]string, 0, len(paths))
+		for _, path := range paths {
+			asset, err := appmedia.NormalizeFile(ctx, request.ProjectRoot, path)
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil, publishContextError(ctx.Err())
+				}
+				return nil, screenshotConfigError(path, err)
+			}
+			uploaded, err := client.UploadApplicationImage(ctx, bytes.NewReader(asset.Data), asset.FileName)
+			if err != nil {
+				return nil, sanitizePublishError(err)
+			}
+			result = append(result, uploaded)
+		}
+		return result, nil
+	}
+	pc, err := upload(request.Application.ScreenshotPCFiles)
+	if err != nil {
+		return nil, err
+	}
+	mobile, err := upload(request.Application.ScreenshotMobileFiles)
+	if err != nil {
+		return nil, err
+	}
+	return []appstore.ApplicationInfo{{
+		ID: 0, Language: application.Language, Name: application.Name,
+		Brief: request.Application.Brief, Description: request.Application.Description, Keywords: request.Application.Keywords,
+		Source: application.Source, SourceAuthor: application.SourceAuthor,
+		SupportPC: request.Application.SupportPC, SupportMobile: request.Application.SupportMobile,
+		ScreenshotPCPaths: pc, ScreenshotMobilePaths: mobile,
+	}}, nil
+}
+
+type publicScreenshotError struct {
+	path   string
+	detail string
+}
+
+func (err *publicScreenshotError) Error() string { return "official application screenshot is invalid" }
+
+func (err *publicScreenshotError) PublicErrorPath() string { return err.path }
+
+func (err *publicScreenshotError) PublicErrorDetail() string { return err.detail }
+
+func screenshotConfigError(path string, err error) error {
+	return &lpkgo.Error{
+		Code: lpkgo.CodeInvalidConfig,
+		Op:   "store.official.screenshot",
+		Cause: &publicScreenshotError{
+			path:   path,
+			detail: screenshotErrorDetail(err),
+		},
+	}
+}
+
+func screenshotErrorDetail(err error) string {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return "screenshot file does not exist"
+	case strings.Contains(err.Error(), "symbolic links are not allowed"):
+		return "screenshot symbolic links are not allowed"
+	case strings.Contains(err.Error(), "screenshot must be a regular file"):
+		return "screenshot must be a regular file"
+	case strings.Contains(err.Error(), "only PNG and JPEG images are supported"):
+		return "screenshot must be a PNG or JPEG image"
+	case strings.Contains(err.Error(), "dimensions must be between"):
+		return "screenshot dimensions must be between 320 and 3840 pixels"
+	case strings.Contains(err.Error(), "normalized image exceeds"):
+		return "normalized screenshot exceeds the 15 MiB upload limit"
+	case strings.Contains(err.Error(), "image exceeds"):
+		return "screenshot exceeds the 15 MiB input limit"
+	case strings.Contains(err.Error(), "image payload is invalid"):
+		return "screenshot image data is invalid"
+	default:
+		return ""
+	}
 }
 
 func retryablePublishError(err error) bool {
@@ -387,8 +521,9 @@ func uploadLPK(ctx context.Context, client *http.Client, baseURL, token, filenam
 	return upload, nil
 }
 
-func submitReview(ctx context.Context, client *http.Client, baseURL, token string, upload appstore.UploadInfo, changelogs map[string]string) error {
+func submitReview(ctx context.Context, client *http.Client, baseURL, token string, upload appstore.UploadInfo, infos []appstore.ApplicationInfo, changelogs map[string]string) error {
 	body := struct {
+		Infos   []appstore.ApplicationInfo `json:"infos,omitempty"`
 		Version struct {
 			Package              string            `json:"package"`
 			Name                 string            `json:"name"`
@@ -402,6 +537,7 @@ func submitReview(ctx context.Context, client *http.Client, baseURL, token strin
 			Changelogs           map[string]string `json:"changelogs"`
 		} `json:"version"`
 	}{}
+	body.Infos = infos
 	body.Version.Package = upload.Package
 	body.Version.Name = upload.Version
 	body.Version.IconPath = upload.IconPath

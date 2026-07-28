@@ -4,7 +4,7 @@
 
 `ca-x/lazycat-github-action` 用于检查 Docker 镜像版本、精确更新 LazyCat Manifest、构建 LPK、创建更新 Pull Request，并把校验后的 LPK 上传到 GitHub Release。
 
-Action 使用 [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.3.4`，兼容基线是 `@lazycatcloud/lzc-cli` `2.0.9`。
+Action 使用 [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.3.5`，兼容基线是 `@lazycatcloud/lzc-cli` `2.0.9`。
 
 当前交付范围：
 
@@ -485,11 +485,27 @@ stores:
     application:
       language: zh
       name: Example App
+      brief: 面向协作 Agent 的专注工作空间
+      description: 展示在应用详情页中的完整介绍。
+      keywords: Agent, 协作, 工作空间
       source: https://github.com/acme/example
       source_author: acme
+      support_pc: true
+      support_mobile: true
+      screenshot_pc_files:
+        - .github/screenshots/pc-1.png
+        - .github/screenshots/pc-2.png
+      screenshot_mobile_files:
+        - .github/screenshots/mobile-1.png
+        - .github/screenshots/mobile-2.png
+        - .github/screenshots/mobile-3.png
 ```
 
 `create_if_missing: false` 只允许发布到已经存在的应用。允许创建时，`application.name` 默认读取 `package.yml.name`，`language` 默认为 `zh`。官方模式会执行与 lzc-cli 偏好一致的检查，包括 locales、图标不超过 200 KB、SemVer 元数据和 LazyCat Registry 运行镜像。`container_name` 等一般兼容性 warning 仍会展示，但不会阻断构建；只有被分类为官方商店 warning 的问题才会阻断官方发布，而且不会影响仅启用私有商店的 workflow。只要配置了 `direct` 或 `mirror`，就会在发布前失败。
+
+应用信息字段都是可选附加参数。配置 `brief`、`description`、`keywords`、任一值为 true 的支持开关，或任一截图列表时，才会启用带认证的首次信息提交状态判断；只配置 `language`、`name`、`source`、`source_author` 时仍保持原有的仅创建应用行为。两个支持开关默认均为 false。Action 不通过匿名公开目录猜测首次提交，而是区分应用不存在、应用信息缺失、信息已审核和已有待审核任务。已审核的信息不会重复上传；存在待审核任务时，会在上传 LPK 或截图前失败。
+
+截图文件必须先提交并推送到 workflow 会 checkout 的 ref。Agent 可以使用 `agent-browser` 按项目确认的桌面端和移动端 viewport 截图，保存到 `.github/screenshots/` 等仓库目录后再运行 Action。Action 不会下载远程截图 URL。PC 端需要 2-8 张，移动端需要 3-8 张；输入只能是 PNG/JPEG，单张不超过 15 MiB，宽高均须在 320-3840 像素之间。图片会自动居中裁剪为 16:9 并转成 PNG 上传。越出 `project.root` 的路径、符号链接、非普通文件和不安全文件名都会被拒绝；错误只会安全展示仓库相对路径和允许公开的原因，不暴露 runner 路径或凭据。
 
 `skip_if_version_exists: true` 会在 LPK 校验完成后，通过精确包名匿名查询官方商店。版本相同时返回 `published: false`、`skipped: true` 和 `skipReason: version-already-online`。两者均为合法 SemVer、线上版本更高且 `update.allow_downgrade: false` 时，也会安全跳过并返回 `skipReason: online-version-newer`；只有显式设置 `allow_downgrade: true` 才继续执行回退提交。non-SemVer 值只判断精确相等，绝不按字符串猜测顺序。跳过时不会解析开发者 Token，也不会提交 LPK。应用不存在时继续发布；其他查询错误直接失败。该选项默认 `false`，`dry-run` 仍然完全不发起远端请求。
 

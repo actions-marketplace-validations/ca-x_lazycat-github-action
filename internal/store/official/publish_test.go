@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"log/slog"
 	"net/http"
@@ -22,6 +25,7 @@ import (
 	"github.com/ca-x/lazycat-github-action/internal/config"
 	"github.com/ca-x/lazycat-github-action/internal/store/official"
 	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/appstore"
 	"github.com/lib-x/lzc-toolkit-go/auth"
 	"github.com/lib-x/lzc-toolkit-go/lpk"
 )
@@ -51,6 +55,226 @@ func TestPublisherRetryDefaultsOffAfterOneCompleteAttempt(t *testing.T) {
 	})
 	if err == nil || checks != 1 || uploads != 1 {
 		t.Fatalf("err=%v checks=%d uploads=%d", err, checks, uploads)
+	}
+}
+
+func TestPublisherAutomaticallySubmitsMissingApplicationInformation(t *testing.T) {
+	path, digest := publishLPK(t)
+	root := t.TempDir()
+	writeApplicationScreenshot(t, filepath.Join(root, "pc-one.png"), color.RGBA{R: 220, A: 255})
+	writeApplicationScreenshot(t, filepath.Join(root, "pc-two.png"), color.RGBA{B: 220, A: 255})
+	writeApplicationScreenshot(t, filepath.Join(root, "mobile-one.png"), color.RGBA{G: 180, A: 255})
+	writeApplicationScreenshot(t, filepath.Join(root, "mobile-two.png"), color.RGBA{R: 120, G: 120, A: 255})
+	writeApplicationScreenshot(t, filepath.Join(root, "mobile-three.png"), color.RGBA{B: 120, G: 120, A: 255})
+	uploadedImages := 0
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/v3/developer/app/list":
+			if request.URL.Query().Get("seek") != "cloud.lazycat.apps.publish-demo" {
+				t.Fatalf("query=%s", request.URL.RawQuery)
+			}
+			_, _ = response.Write([]byte(`{"items":[{"id":7,"package":"cloud.lazycat.apps.publish-demo","waiting_review_id":null,"resource":{"info_data":{}}}]}`))
+		case "/api/v3/developer/upload":
+			uploadedImages++
+			if err := request.ParseMultipartForm(4 << 20); err != nil {
+				t.Fatal(err)
+			}
+			file, header, err := request.FormFile("file")
+			if err != nil {
+				t.Fatal(err)
+			}
+			configuration, format, decodeErr := image.DecodeConfig(file)
+			closeErr := file.Close()
+			if decodeErr != nil || closeErr != nil || format != "png" || configuration.Width != 640 || configuration.Height != 360 || !strings.HasSuffix(header.Filename, ".png") {
+				t.Fatalf("filename=%q image=%#v format=%q decodeErr=%v closeErr=%v", header.Filename, configuration, format, decodeErr, closeErr)
+			}
+			_, _ = fmt.Fprintf(response, `{"url":"/screens/image-%d.png"}`, uploadedImages)
+		case "/api/v3/developer/app/lpk/upload":
+			_, _ = fmt.Fprintf(response, `{"package":"cloud.lazycat.apps.publish-demo","version":"1.0.0","iconPath":"/icon.png","url":"/demo.lpk","sha256":"%s","unsupportedPlatforms":[],"minOsVersion":"1.3.0","lpkSize":123,"imageSize":0}`, digest)
+		case "/api/v3/developer/app/cloud.lazycat.apps.publish-demo/review/create":
+			var body struct {
+				Infos []struct {
+					Language              string   `json:"language"`
+					Brief                 string   `json:"brief"`
+					SupportPC             bool     `json:"support_pc"`
+					SupportMobile         bool     `json:"support_mobile"`
+					ScreenshotPCPaths     []string `json:"screenshot_pc_paths"`
+					ScreenshotMobilePaths []string `json:"screenshot_mobile_paths"`
+				} `json:"infos"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if len(body.Infos) != 1 || body.Infos[0].Language != "zh" || body.Infos[0].Brief != "Collaborative workspace" || !body.Infos[0].SupportPC || !body.Infos[0].SupportMobile || strings.Join(body.Infos[0].ScreenshotPCPaths, ",") != "/screens/image-1.png,/screens/image-2.png" || strings.Join(body.Infos[0].ScreenshotMobilePaths, ",") != "/screens/image-3.png,/screens/image-4.png,/screens/image-5.png" {
+				t.Fatalf("infos=%#v", body.Infos)
+			}
+			_, _ = response.Write([]byte(`{"success":true}`))
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+
+	result, err := (official.Publisher{BaseURL: server.URL, HTTPClient: server.Client()}).Publish(context.Background(), official.Request{
+		Provider: auth.StaticToken("ci-token"), ProjectRoot: root, LPKPath: path, PackageID: "cloud.lazycat.apps.publish-demo",
+		Version: "1.0.0", SHA256: digest, Changelog: "Release notes", Locales: []string{"zh"}, CreateIfMissing: true,
+		Application: config.OfficialApplication{
+			Language: "zh", Name: "Publish Demo", Brief: "Collaborative workspace", SupportPC: true, SupportMobile: true,
+			ScreenshotPCFiles:     []string{"pc-one.png", "pc-two.png"},
+			ScreenshotMobileFiles: []string{"mobile-one.png", "mobile-two.png", "mobile-three.png"},
+		},
+	})
+	if err != nil || !result.Published || uploadedImages != 5 {
+		t.Fatalf("result=%#v uploadedImages=%d err=%v", result, uploadedImages, err)
+	}
+}
+
+func TestPublisherCreatesMissingApplicationWithFirstInformationReview(t *testing.T) {
+	path, digest := publishLPK(t)
+	root := t.TempDir()
+	writeApplicationScreenshot(t, filepath.Join(root, "pc-one.png"), color.RGBA{R: 220, A: 255})
+	writeApplicationScreenshot(t, filepath.Join(root, "pc-two.png"), color.RGBA{B: 220, A: 255})
+	created, uploadedImages := 0, 0
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/v3/developer/app/list":
+			_, _ = response.Write([]byte(`{"items":[]}`))
+		case "/api/v3/developer/app/create":
+			created++
+			var body appstore.CreateApplicationRequest
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Package != "cloud.lazycat.apps.publish-demo" || body.Name != "Publish Demo" {
+				t.Fatalf("application=%#v", body)
+			}
+			_, _ = response.Write([]byte(`{"success":true}`))
+		case "/api/v3/developer/upload":
+			uploadedImages++
+			_, _ = fmt.Fprintf(response, `{"url":"/screens/image-%d.png"}`, uploadedImages)
+		case "/api/v3/developer/app/lpk/upload":
+			_, _ = fmt.Fprintf(response, `{"package":"cloud.lazycat.apps.publish-demo","version":"1.0.0","iconPath":"/icon.png","url":"/demo.lpk","sha256":"%s","unsupportedPlatforms":[],"minOsVersion":"1.3.0","lpkSize":123,"imageSize":0}`, digest)
+		case "/api/v3/developer/app/cloud.lazycat.apps.publish-demo/review/create":
+			var body struct {
+				Infos []appstore.ApplicationInfo `json:"infos"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if len(body.Infos) != 1 || len(body.Infos[0].ScreenshotPCPaths) != 2 {
+				t.Fatalf("infos=%#v", body.Infos)
+			}
+			_, _ = response.Write([]byte(`{"success":true}`))
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+
+	result, err := (official.Publisher{BaseURL: server.URL, HTTPClient: server.Client()}).Publish(context.Background(), official.Request{
+		Provider: auth.StaticToken("ci-token"), ProjectRoot: root, LPKPath: path, PackageID: "cloud.lazycat.apps.publish-demo",
+		Version: "1.0.0", SHA256: digest, Changelog: "Release notes", Locales: []string{"zh"}, CreateIfMissing: true,
+		Application: config.OfficialApplication{
+			Language: "zh", Name: "Publish Demo", Brief: "Workspace", SupportPC: true,
+			ScreenshotPCFiles: []string{"pc-one.png", "pc-two.png"},
+		},
+	})
+	if err != nil || !result.Published || !result.Created || created != 1 || uploadedImages != 2 {
+		t.Fatalf("result=%#v created=%d uploadedImages=%d err=%v", result, created, uploadedImages, err)
+	}
+}
+
+func TestPublisherDoesNotResubmitApprovedApplicationInformation(t *testing.T) {
+	path, digest := publishLPK(t)
+	listRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/v3/developer/app/list":
+			listRequests++
+			_, _ = response.Write([]byte(`{"items":[{"id":7,"package":"cloud.lazycat.apps.publish-demo","resource":{"info_data":{"zh":{"language":"zh","name":"Publish Demo","brief":"Workspace","support_pc":true,"screenshot_pc_paths":["/one.png","/two.png"]}}}}]}`))
+		case "/api/v3/developer/upload":
+			t.Fatal("approved application information must not upload screenshots")
+		case "/api/v3/developer/app/lpk/upload":
+			_, _ = fmt.Fprintf(response, `{"package":"cloud.lazycat.apps.publish-demo","version":"1.0.0","iconPath":"/icon.png","url":"/demo.lpk","sha256":"%s","unsupportedPlatforms":[],"minOsVersion":"1.3.0","lpkSize":123,"imageSize":0}`, digest)
+		case "/api/v3/developer/app/cloud.lazycat.apps.publish-demo/review/create":
+			var body map[string]json.RawMessage
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if _, found := body["infos"]; found {
+				t.Fatalf("unexpected infos=%s", body["infos"])
+			}
+			_, _ = response.Write([]byte(`{"success":true}`))
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+
+	result, err := (official.Publisher{BaseURL: server.URL, HTTPClient: server.Client()}).Publish(context.Background(), official.Request{
+		Provider: auth.StaticToken("ci-token"), ProjectRoot: t.TempDir(), LPKPath: path, PackageID: "cloud.lazycat.apps.publish-demo",
+		Version: "1.0.0", SHA256: digest, Changelog: "Release notes", Locales: []string{"zh"}, CreateIfMissing: true,
+		Application: config.OfficialApplication{
+			Language: "zh", Name: "Publish Demo", Brief: "Workspace", SupportPC: true,
+			ScreenshotPCFiles: []string{"missing-one.png", "missing-two.png"},
+		},
+	})
+	if err != nil || !result.Published || listRequests != 2 {
+		t.Fatalf("result=%#v listRequests=%d err=%v", result, listRequests, err)
+	}
+}
+
+func TestPublisherStopsWhenApplicationReviewIsAlreadyPending(t *testing.T) {
+	path, digest := publishLPK(t)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		requests++
+		if request.URL.Path != "/api/v3/developer/app/list" {
+			t.Fatalf("unexpected request=%s", request.URL.Path)
+		}
+		_, _ = response.Write([]byte(`{"items":[{"id":7,"package":"cloud.lazycat.apps.publish-demo","waiting_review_id":19,"resource":{"info_data":{}}}]}`))
+	}))
+	defer server.Close()
+
+	_, err := (official.Publisher{BaseURL: server.URL, HTTPClient: server.Client()}).Publish(context.Background(), official.Request{
+		Provider: auth.StaticToken("ci-token"), ProjectRoot: t.TempDir(), LPKPath: path, PackageID: "cloud.lazycat.apps.publish-demo",
+		Version: "1.0.0", SHA256: digest, Changelog: "Release notes", Locales: []string{"zh"}, CreateIfMissing: true,
+		Application: config.OfficialApplication{
+			Language: "zh", Name: "Publish Demo", Brief: "Workspace", SupportPC: true,
+			ScreenshotPCFiles: []string{"missing-one.png", "missing-two.png"},
+		},
+	})
+	if !errors.Is(err, lpkgo.ErrConflict) || requests != 1 {
+		t.Fatalf("err=%v requests=%d", err, requests)
+	}
+}
+
+func TestPublisherReturnsSafeScreenshotPathAndDetail(t *testing.T) {
+	path, digest := publishLPK(t)
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/v3/developer/app/list" {
+			t.Fatalf("unexpected request=%s", request.URL.Path)
+		}
+		_, _ = response.Write([]byte(`{"items":[{"id":7,"package":"cloud.lazycat.apps.publish-demo","resource":{"info_data":{}}}]}`))
+	}))
+	defer server.Close()
+
+	_, err := (official.Publisher{BaseURL: server.URL, HTTPClient: server.Client()}).Publish(context.Background(), official.Request{
+		Provider: auth.StaticToken("ci-token"), ProjectRoot: t.TempDir(), LPKPath: path, PackageID: "cloud.lazycat.apps.publish-demo",
+		Version: "1.0.0", SHA256: digest, Changelog: "Release notes", Locales: []string{"zh"}, CreateIfMissing: true,
+		Application: config.OfficialApplication{
+			Language: "zh", Name: "Publish Demo", Brief: "Workspace", SupportPC: true,
+			ScreenshotPCFiles: []string{"missing-one.png", "missing-two.png"},
+		},
+	})
+	var toolkitError *lpkgo.Error
+	if !errors.As(err, &toolkitError) || toolkitError.Code != lpkgo.CodeInvalidConfig || toolkitError.Op != "store.official.screenshot" {
+		t.Fatalf("err=%v", err)
+	}
+	pathDetail, pathOK := toolkitError.Cause.(interface{ PublicErrorPath() string })
+	messageDetail, messageOK := toolkitError.Cause.(interface{ PublicErrorDetail() string })
+	if !pathOK || !messageOK || pathDetail.PublicErrorPath() != "missing-one.png" || messageDetail.PublicErrorDetail() != "screenshot file does not exist" {
+		t.Fatalf("cause=%#v", toolkitError.Cause)
 	}
 }
 
@@ -1165,4 +1389,23 @@ func publishLPKWithManifest(t *testing.T, manifestData string, allowTemplate boo
 	}
 	digest := sha256.Sum256(data)
 	return path, fmt.Sprintf("%x", digest[:])
+}
+
+func writeApplicationScreenshot(t *testing.T, path string, fill color.RGBA) {
+	t.Helper()
+	output := image.NewRGBA(image.Rect(0, 0, 640, 480))
+	for y := range 480 {
+		for x := range 640 {
+			output.SetRGBA(x, y, fill)
+		}
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encodeErr := png.Encode(file, output)
+	closeErr := file.Close()
+	if encodeErr != nil || closeErr != nil {
+		t.Fatal(errors.Join(encodeErr, closeErr))
+	}
 }
