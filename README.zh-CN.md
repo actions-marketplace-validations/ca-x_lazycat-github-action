@@ -4,7 +4,7 @@
 
 `ca-x/lazycat-github-action` 用于检查 Docker 镜像版本、精确更新 LazyCat Manifest、构建 LPK、创建更新 Pull Request，并把校验后的 LPK 上传到 GitHub Release。
 
-Action 使用 [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.3.3`，兼容基线是 `@lazycatcloud/lzc-cli` `2.0.8`。
+Action 使用 [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.3.4`，兼容基线是 `@lazycatcloud/lzc-cli` `2.0.9`。
 
 当前交付范围：
 
@@ -21,7 +21,7 @@ Action 使用 [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-t
 | Composite Action | `ca-x/lazycat-github-action@v1` | 现有 job 已经负责 checkout、权限、工具链安装和 GitHub 写操作。 |
 | Reusable Workflow | `ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1` | 需要完整 LazyCat CI/CD，包括工具链、Pull Request、Artifact、tag、Release、Asset 和商店发布。 |
 
-当前官方 checkout 和 Node setup Action 使用 Node.js 24 运行时；self-hosted GitHub Actions Runner 必须为 `v2.327.1` 或更高版本。由调用方管理的 composite job 应使用 `actions/checkout@v7` 和 `actions/setup-node@v7`；reusable workflow 会在内部负责这些 setup 步骤。
+当前官方 checkout 和 Node setup Action 使用 Node.js 24 运行时；self-hosted GitHub Actions Runner 必须为 `v2.327.1` 或更高版本。由调用方管理的 composite job 应使用 `actions/checkout@v7` 和 `actions/setup-node@v7`；reusable workflow 内部的 setup-go、github-script、Docker setup/login、Pull Request 创建和构建证明 Action 也使用当前受支持的主版本。
 
 一般 CI/CD 推荐调用 reusable workflow：
 
@@ -57,6 +57,8 @@ Action 使用 Go 官方 `log/slog` 输出结构化进度，同时不会打印 Se
 - 目标商店、已验证的发布文件、同版本跳过、提交开始和提交结果。
 
 项目 buildscript 的 stdout/stderr 会实时透传，便于定位原生工具缺失等错误。Action 会显示进程退出码，但不会打印 buildscript 正文或受保护的环境变量。
+
+本地 LPK 校验失败时，Action 会在安全范围内给出结构化诊断。例如模板 Manifest 解析失败可显示 `upstream=INVALID_CONFIG`、`op=build.template_manifest`、`path=lzc-manifest.yml` 和限长后的 `message="yaml: line 90: ..."`。路径只有在精确命中项目检查阶段已确认的 package、build 或 Manifest 文件时才会公开；Runner 路径、未知路径、Unicode 日志分隔符和疑似凭据内容都会被隐藏。
 
 ## 使用 Skill
 
@@ -388,7 +390,7 @@ REGISTRY_USERNAME=<username>
 REGISTRY_PASSWORD=<token or password>
 ```
 
-reusable workflow 使用 `docker/login-action` 写入 Docker 凭据，OCI 客户端会读取这些凭据。它们只负责 Action 侧的镜像检查。lzc-cli 2.0.8 对应的 LazyCat `CopyImage` API 没有源 Registry 用户名、密码或 token 字段，因此 `mode: lazycat` 使用私有源镜像时，还要确保开发者平台本身能够拉取该镜像。
+reusable workflow 使用 `docker/login-action` 写入 Docker 凭据，OCI 客户端会读取这些凭据。它们只负责 Action 侧的镜像检查。lzc-cli 2.0.9 对应的 LazyCat `CopyImage` API 没有源 Registry 用户名、密码或 token 字段，因此 `mode: lazycat` 使用私有源镜像时，还要确保开发者平台本身能够拉取该镜像。
 
 ## 认证
 
@@ -401,7 +403,7 @@ LazyCat 镜像复制和官方 LPK 提交按以下顺序解析认证信息：
 
 CI 推荐长期保存可撤销的 token。账号密码可以作为临时回退方式，但不建议把账户密码长期放在 GitHub Secrets；登录返回的 token 只在当前进程内存中使用，不写入磁盘。
 
-本机已经通过 lzc-cli 2.0.8 登录时，lzc-cli 先读取 `LZC_CLI_TOKEN`，否则读取 `~/.config/lazycat/box-config.json` 的 `token` 字段。`lzc-cli config get token` 会打印当前生效的 token，不要在 CI 日志中运行。GitHub 托管 Runner 无法读取你的本机登录文件，必须把 token 配置为仓库或组织 Secret。
+本机已经通过 lzc-cli 2.0.9 登录时，lzc-cli 先读取 `LZC_CLI_TOKEN`，否则读取 `~/.config/lazycat/box-config.json` 的 `token` 字段。`lzc-cli config get token` 会打印当前生效的 token，不要在 CI 日志中运行。GitHub 托管 Runner 无法读取你的本机登录文件，必须把 token 配置为仓库或组织 Secret。
 
 可信 self-hosted Runner 可以显式使用已有的 lzc-cli 兼容文件：
 

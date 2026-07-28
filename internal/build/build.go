@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ca-x/lazycat-github-action/internal/diagnostic"
 	"github.com/ca-x/lazycat-github-action/internal/lpkcheck"
 	"github.com/ca-x/lazycat-github-action/internal/platform"
 	"github.com/ca-x/lazycat-github-action/internal/project"
@@ -48,6 +49,31 @@ type Builder struct {
 	Stdout io.Writer
 	Stderr io.Writer
 	Logger *slog.Logger
+}
+
+type publicBuildDiagnostic struct {
+	cause  error
+	path   string
+	detail string
+}
+
+func (diagnostic publicBuildDiagnostic) Error() string {
+	if diagnostic.detail != "" {
+		return diagnostic.detail
+	}
+	return "local LPK build validation failed"
+}
+
+func (diagnostic publicBuildDiagnostic) Unwrap() error {
+	return diagnostic.cause
+}
+
+func (diagnostic publicBuildDiagnostic) PublicErrorDetail() string {
+	return diagnostic.detail
+}
+
+func (diagnostic publicBuildDiagnostic) PublicErrorPath() string {
+	return diagnostic.path
 }
 
 var protectedBuildEnvironment = map[string]struct{}{
@@ -168,7 +194,7 @@ func (builder Builder) Build(ctx context.Context, request Request) (result Resul
 		Runner:             protectedRunner{base: runner},
 	})
 	if err != nil {
-		return Result{}, fmt.Errorf("build LPK with toolkit: %s: %w", rootCauseMessage(err), err)
+		return Result{}, wrapToolkitBuildError(request.Project, err)
 	}
 	builder.logger().Info("LPK package assembled; verifying metadata and contents")
 
@@ -279,15 +305,54 @@ func (builder Builder) logger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func rootCauseMessage(err error) string {
-	root := err
-	for {
-		unwrapped := errors.Unwrap(root)
-		if unwrapped == nil {
-			return root.Error()
-		}
-		root = unwrapped
+func wrapToolkitBuildError(info project.Info, err error) error {
+	var toolkitError *lpkgo.Error
+	if !errors.As(err, &toolkitError) {
+		return fmt.Errorf("build LPK with toolkit: %w", err)
 	}
+	clone := *toolkitError
+	clone.Path = diagnostic.KnownProjectPath(info.Root, toolkitError.Path, info.BuildConfig, info.ManifestFile, info.PackageFile)
+	publicDiagnostic := publicBuildDiagnostic{
+		cause:  toolkitError.Cause,
+		path:   clone.Path,
+		detail: safePublicBuildDetail(toolkitError),
+	}
+	clone.Cause = publicDiagnostic
+	if publicDiagnostic.detail != "" {
+		return fmt.Errorf("build LPK with toolkit: %s: %w", publicDiagnostic.detail, &clone)
+	}
+	return fmt.Errorf("build LPK with toolkit: %w", &clone)
+}
+
+func safePublicBuildDetail(toolkitError *lpkgo.Error) string {
+	if toolkitError == nil || toolkitError.Cause == nil {
+		return ""
+	}
+	if toolkitError.Code == lpkgo.CodeInvalidConfig || toolkitError.Code == lpkgo.CodeInvalidManifest {
+		return diagnostic.SafeYAMLSyntaxDetail(toolkitError.Cause)
+	}
+	if toolkitError.Code == lpkgo.CodeCommandFailed {
+		return safeBuildscriptExitDetail(toolkitError.Cause)
+	}
+	return ""
+}
+
+func safeBuildscriptExitDetail(err error) string {
+	const prefix = "buildscript exited with code "
+	detail := strings.Join(strings.Fields(strings.ToValidUTF8(err.Error(), "")), " ")
+	if !strings.HasPrefix(detail, prefix) {
+		return ""
+	}
+	code := strings.TrimPrefix(detail, prefix)
+	if code == "" || code[0] == '0' {
+		return ""
+	}
+	for _, character := range code {
+		if character < '0' || character > '9' {
+			return ""
+		}
+	}
+	return detail
 }
 
 func syncDirectory(directory string) error {

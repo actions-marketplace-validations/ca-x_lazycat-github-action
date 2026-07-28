@@ -68,7 +68,7 @@ jobs:
           done
 
       - name: Attest release archives
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/lazycat-action_linux_*.tar.gz
 

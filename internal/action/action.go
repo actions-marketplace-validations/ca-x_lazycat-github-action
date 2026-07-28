@@ -16,6 +16,7 @@ import (
 	actionbuild "github.com/ca-x/lazycat-github-action/internal/build"
 	"github.com/ca-x/lazycat-github-action/internal/config"
 	"github.com/ca-x/lazycat-github-action/internal/delivery"
+	"github.com/ca-x/lazycat-github-action/internal/diagnostic"
 	"github.com/ca-x/lazycat-github-action/internal/imageflow"
 	"github.com/ca-x/lazycat-github-action/internal/platform"
 	"github.com/ca-x/lazycat-github-action/internal/platformauth"
@@ -113,7 +114,7 @@ func (err *Error) Error() string {
 	if !errors.As(err.Cause, &toolkitError) {
 		return message
 	}
-	details := make([]string, 0, 3)
+	details := make([]string, 0, 5)
 	if toolkitError.Code != "" {
 		details = append(details, "upstream="+string(toolkitError.Code))
 	}
@@ -123,17 +124,29 @@ func (err *Error) Error() string {
 	if toolkitError.Op != "" {
 		details = append(details, "op="+toolkitError.Op)
 	}
+	var publicPath interface{ PublicErrorPath() string }
+	if errors.As(toolkitError.Cause, &publicPath) {
+		if path := diagnostic.SafePath(publicPath.PublicErrorPath()); path != "" {
+			details = append(details, "path="+quoteDiagnosticToken(path))
+		}
+	}
 	var publicDetail interface{ PublicErrorDetail() string }
 	if errors.As(toolkitError.Cause, &publicDetail) {
-		message := strings.Join(strings.Fields(publicDetail.PublicErrorDetail()), " ")
-		if message != "" {
-			details = append(details, "message="+strconv.Quote(message))
+		if detail := diagnostic.SafeDetail(publicDetail.PublicErrorDetail()); detail != "" {
+			details = append(details, "message="+strconv.Quote(detail))
 		}
 	}
 	if len(details) == 0 {
 		return message
 	}
 	return message + " (" + strings.Join(details, " ") + ")"
+}
+
+func quoteDiagnosticToken(value string) string {
+	if strings.ContainsAny(value, " \t\r\n\"\\()") {
+		return strconv.Quote(value)
+	}
+	return value
 }
 
 func (err *Error) Unwrap() error {

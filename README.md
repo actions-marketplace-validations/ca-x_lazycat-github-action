@@ -4,7 +4,7 @@
 
 `ca-x/lazycat-github-action` checks Docker image versions, updates explicit LazyCat Manifest targets, builds LPK files, creates update pull requests, and attaches validated LPK files to GitHub Releases.
 
-The Action uses [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.3.3`. Its compatibility baseline is `@lazycatcloud/lzc-cli` `2.0.8`.
+The Action uses [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.3.4`. Its compatibility baseline is `@lazycatcloud/lzc-cli` `2.0.9`.
 
 Current scope:
 
@@ -21,7 +21,7 @@ Both public entry points are supported and follow the floating `v1` release tag:
 | Composite Action | `ca-x/lazycat-github-action@v1` | Your job already owns checkout, permissions, toolchain setup, and GitHub mutations. |
 | Reusable Workflow | `ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1` | You want the complete LazyCat CI/CD path, including toolchains, pull requests, Artifacts, tags, Releases, assets, and store publication. |
 
-Current official checkout and Node setup Actions use the Node.js 24 runtime. Self-hosted GitHub Actions Runners must be `v2.327.1` or newer. Caller-owned composite jobs should use `actions/checkout@v7` and `actions/setup-node@v7`; the reusable workflow owns those setup steps internally.
+Current official checkout and Node setup Actions use the Node.js 24 runtime. Self-hosted GitHub Actions Runners must be `v2.327.1` or newer. Caller-owned composite jobs should use `actions/checkout@v7` and `actions/setup-node@v7`; the reusable workflow also uses the current supported major lines for setup-go, github-script, Docker setup/login, pull-request creation, and build provenance.
 
 Use the reusable workflow for normal CI/CD:
 
@@ -57,6 +57,8 @@ The Action emits structured `log/slog` progress records without printing Secret 
 - Store target, verified publication artifact, equal-version skip, publication start, and publication result.
 
 Project buildscript stdout and stderr are streamed live so native-tool failures remain visible. The Action reports the process exit code but does not print the buildscript body or protected environment values.
+
+Local LPK validation errors include safe structured diagnostics when available. For example, a templated Manifest parse failure may report `upstream=INVALID_CONFIG`, `op=build.template_manifest`, `path=lzc-manifest.yml`, and a bounded `message="yaml: line 90: ..."`. A path is public only when it exactly matches a package, build, or Manifest file already confirmed during project inspection; runner paths, unknown paths, Unicode log separators, and suspected credential content are suppressed.
 
 ## Using the Skill
 
@@ -388,7 +390,7 @@ REGISTRY_USERNAME=<username>
 REGISTRY_PASSWORD=<token or password>
 ```
 
-The reusable workflow runs `docker/login-action`, which writes Docker credentials used by the OCI client. These credentials authenticate Action-side inspection. LazyCat's remote `CopyImage` API has no source Registry credential fields in the lzc-cli 2.0.8 contract, so a private source used with `mode: lazycat` must also be pullable by the developer platform.
+The reusable workflow runs `docker/login-action`, which writes Docker credentials used by the OCI client. These credentials authenticate Action-side inspection. LazyCat's remote `CopyImage` API has no source Registry credential fields in the lzc-cli 2.0.9 contract, so a private source used with `mode: lazycat` must also be pullable by the developer platform.
 
 ## Authentication
 
@@ -401,7 +403,7 @@ LazyCat image copy and official LPK publishing resolve credentials in this order
 
 CI should normally store a token. Username/password is supported as a temporary fallback, but keeping an account password as a long-lived GitHub secret is less desirable than a scoped/revocable token. The login response is kept in memory and is not written to disk.
 
-When lzc-cli 2.0.8 is already logged in locally, it checks `LZC_CLI_TOKEN` first and then the `token` field in `~/.config/lazycat/box-config.json`. `lzc-cli config get token` prints the effective token, so do not run that command in CI logs. A GitHub-hosted Runner cannot read your local login file; add the token as a repository or organization secret.
+When lzc-cli 2.0.9 is already logged in locally, it checks `LZC_CLI_TOKEN` first and then the `token` field in `~/.config/lazycat/box-config.json`. `lzc-cli config get token` prints the effective token, so do not run that command in CI logs. A GitHub-hosted Runner cannot read your local login file; add the token as a repository or organization secret.
 
 On a trusted self-hosted Runner, an existing lzc-cli-compatible file can be selected explicitly:
 

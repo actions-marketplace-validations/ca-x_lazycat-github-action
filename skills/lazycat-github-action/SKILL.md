@@ -159,6 +159,8 @@ The reusable workflow's `toolchains` input must match `build.toolchains` in Acti
 
 GitHub-hosted workflows must use Node.js 24-compatible official JavaScript Actions. When a caller-owned job uses the composite Action, generate `actions/checkout@v7` and `actions/setup-node@v7`; replace the legacy v4 majors during workflow review. The reusable workflow owns these setup steps internally, but generated direct-composite examples still need the same majors.
 
+Keep the maintained reusable workflow on the current major lines: `actions/checkout@v7`, `actions/setup-go@v7`, `actions/setup-node@v7`, `actions/upload-artifact@v7`, `actions/github-script@v9`, `docker/login-action@v4`, `docker/setup-qemu-action@v4`, `docker/setup-buildx-action@v4`, `peter-evans/create-pull-request@v8`, and `softprops/action-gh-release@v3`. The Action release workflow uses `anchore/sbom-action/download-syft@v0` and `actions/attest-build-provenance@v4`. When updating these majors, review upstream breaking changes and synchronize the workflow contract tests.
+
 Set `build.run_buildscript: false` explicitly when `lzc-build.yml` has no `buildscript`; the Action default is `true`. For every publishing workflow, explicitly map each credential required by the enabled stores under the reusable job's `secrets:` block. Do not use only `secrets: inherit`: explicit mappings make missing repository authorization and Environment/Repository/Organization overrides reviewable. A public-image scheduled PR workflow with stores disabled should not receive unrelated repository Secrets.
 
 For versioned Release assets, set the reusable workflow input exactly:

@@ -15,6 +15,7 @@ import (
 	actionbuild "github.com/ca-x/lazycat-github-action/internal/build"
 	"github.com/ca-x/lazycat-github-action/internal/platform"
 	"github.com/ca-x/lazycat-github-action/internal/project"
+	lpkgo "github.com/lib-x/lzc-toolkit-go"
 	toolkitbuild "github.com/lib-x/lzc-toolkit-go/build"
 	"github.com/lib-x/lzc-toolkit-go/lpk"
 	"go.yaml.in/yaml/v3"
@@ -217,6 +218,112 @@ func TestBuilderSupportsTemplateControlsInBuiltManifest(t *testing.T) {
 	}
 }
 
+func TestBuilderExposesSafeRelativeYAMLDiagnostic(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"lzc-build.yml": "manifest: ./lzc-manifest.yml\n",
+		"package.yml": `package: cloud.lazycat.action.invalid-yaml
+version: 1.2.3
+name: Invalid YAML Fixture
+description: Invalid YAML fixture
+`,
+		"lzc-manifest.yml": `application:
+  subdomain: invalid-yaml
+services:
+  web:
+    image: alpine:3.20
+    environment:
+      - VALID=true
+     - INVALID=true
+`,
+	}
+	for name, contents := range files {
+		filename := filepath.Join(root, name)
+		if err := os.WriteFile(filename, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	info := project.Info{
+		Root: root, BuildConfig: filepath.Join(root, "lzc-build.yml"), PackageFile: filepath.Join(root, "package.yml"),
+		ManifestFile: filepath.Join(root, "lzc-manifest.yml"), Output: filepath.Join(root, "dist", "app.lpk"),
+		PackageID: "cloud.lazycat.action.invalid-yaml", Version: "1.2.3", Kind: project.KindService,
+	}
+	_, err := (actionbuild.Builder{}).Build(context.Background(), actionbuild.Request{
+		Project: info, Version: "1.2.3", Tag: "v1.2.3",
+	})
+	if err == nil {
+		t.Fatal("expected invalid manifest YAML to fail")
+	}
+	var structured *lpkgo.Error
+	if !errors.As(err, &structured) {
+		t.Fatalf("error is not structured: %T %v", err, err)
+	}
+	if structured.Code != lpkgo.CodeInvalidConfig || structured.Op != "build.template_manifest" || structured.Path != "lzc-manifest.yml" {
+		t.Fatalf("structured error=%#v", structured)
+	}
+	var diagnostic interface{ PublicErrorDetail() string }
+	if !errors.As(structured.Cause, &diagnostic) {
+		t.Fatalf("cause does not expose a public diagnostic: %T %v", structured.Cause, structured.Cause)
+	}
+	detail := diagnostic.PublicErrorDetail()
+	if !strings.Contains(detail, "yaml: line ") || strings.TrimSpace(strings.TrimPrefix(detail, "yaml: line ")) == "" {
+		t.Fatalf("detail=%q", detail)
+	}
+	if strings.Contains(detail, root) || strings.Contains(structured.Path, root) {
+		t.Fatalf("diagnostic leaked project root: path=%q detail=%q", structured.Path, detail)
+	}
+	var publicPath interface{ PublicErrorPath() string }
+	if !errors.As(structured.Cause, &publicPath) {
+		t.Fatalf("cause does not expose a public path: %T %v", structured.Cause, structured.Cause)
+	}
+	if publicPath.PublicErrorPath() != "lzc-manifest.yml" {
+		t.Fatalf("public path=%q", publicPath.PublicErrorPath())
+	}
+}
+
+func TestBuilderDoesNotExposeEnvironmentExpandedOpaqueCredentialPath(t *testing.T) {
+	const opaqueCredential = "AKIAIOSFODNN7EXAMPLE"
+	t.Setenv("AWS_SECRET_ACCESS_KEY", opaqueCredential)
+	root := t.TempDir()
+	for name, contents := range map[string]string{
+		"lzc-build.yml":    "manifest: ${AWS_SECRET_ACCESS_KEY}\n",
+		"package.yml":      "package: cloud.lazycat.action.opaque-path\nversion: 1.2.3\nname: Opaque Path\n",
+		"lzc-manifest.yml": "application:\n  subdomain: opaque-path\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := (actionbuild.Builder{}).Build(context.Background(), actionbuild.Request{
+		Project: project.Info{
+			Root: root, BuildConfig: filepath.Join(root, "lzc-build.yml"), PackageFile: filepath.Join(root, "package.yml"),
+			ManifestFile: filepath.Join(root, "lzc-manifest.yml"), Output: filepath.Join(root, "dist", "app.lpk"),
+			PackageID: "cloud.lazycat.action.opaque-path", Version: "1.2.3", Kind: project.KindStatic,
+		},
+		Version: "1.2.3", Tag: "v1.2.3",
+	})
+	if err == nil {
+		t.Fatal("expected environment-expanded manifest path to fail")
+	}
+	if strings.Contains(err.Error(), opaqueCredential) {
+		t.Fatalf("build error leaked opaque credential: %q", err)
+	}
+	var structured *lpkgo.Error
+	if !errors.As(err, &structured) {
+		t.Fatalf("error is not structured: %T %v", err, err)
+	}
+	if structured.Path != "" {
+		t.Fatalf("structured path=%q want empty", structured.Path)
+	}
+	var publicPath interface{ PublicErrorPath() string }
+	if !errors.As(structured.Cause, &publicPath) {
+		t.Fatalf("cause does not expose a public path: %T %v", structured.Cause, structured.Cause)
+	}
+	if publicPath.PublicErrorPath() != "" {
+		t.Fatalf("public path=%q want empty", publicPath.PublicErrorPath())
+	}
+}
+
 func TestBuilderRejectsMismatchedPackageVersion(t *testing.T) {
 	info := fixtureProject(t)
 	_, err := (actionbuild.Builder{}).Build(context.Background(), actionbuild.Request{
@@ -229,11 +336,12 @@ func TestBuilderRejectsMismatchedPackageVersion(t *testing.T) {
 
 func TestBuilderRemovesTemporaryOutputAfterRunnerFailure(t *testing.T) {
 	info := fixtureProject(t)
+	const opaqueCredential = "AKIAIOSFODNN7EXAMPLE"
 	_, err := (actionbuild.Builder{}).Build(context.Background(), actionbuild.Request{
 		Project: info, Version: "1.2.3", Tag: "v1.2.3", RunBuildScript: true,
-		Runner: failingRunner{err: errors.New("runner failed")},
+		Runner: failingRunner{err: errors.New("runner failed with " + opaqueCredential)},
 	})
-	if err == nil || !strings.Contains(err.Error(), "runner failed") {
+	if err == nil || !strings.Contains(err.Error(), "COMMAND_FAILED") || strings.Contains(err.Error(), opaqueCredential) {
 		t.Fatalf("err=%v", err)
 	}
 	if _, statErr := os.Stat(info.Output); !errors.Is(statErr, os.ErrNotExist) {

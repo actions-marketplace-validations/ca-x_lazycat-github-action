@@ -5,9 +5,9 @@ import "github.com/ca-x/lazycat-github-action/internal/platform"
 var ActionVersion = "dev"
 
 const (
-	ToolkitVersion      = "v0.3.3"
+	ToolkitVersion      = "v0.3.4"
 	ReferenceCLIPackage = "@lazycatcloud/lzc-cli"
-	ReferenceCLIVersion = "2.0.8"
+	ReferenceCLIVersion = "2.0.9"
 )
 
 type BuildInfo struct {

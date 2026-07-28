@@ -238,8 +238,194 @@ func TestErrorIncludesExplicitPublicUpstreamMessage(t *testing.T) {
 	}
 }
 
+func TestErrorIncludesSafeBuildPathLineAndMessage(t *testing.T) {
+	err := &action.Error{
+		Code:    action.CodeBuildFailed,
+		Message: "LPK validation build failed after image update",
+		Cause: &lpkgo.Error{
+			Code: lpkgo.CodeInvalidConfig,
+			Op:   "build.template_manifest",
+			Path: "/tmp/actions-runner/_work/openship/lzc-manifest.yml",
+			Cause: publicDetailError{
+				message: "yaml:\n  line 90: block sequence entries are not allowed in this context",
+				path:    "/tmp/actions-runner/_work/openship/lzc-manifest.yml",
+			},
+		},
+	}
+	message := err.Error()
+	for _, expected := range []string{
+		"BUILD_FAILED: LPK validation build failed after image update",
+		"upstream=INVALID_CONFIG",
+		"op=build.template_manifest",
+		"path=lzc-manifest.yml",
+		`message="yaml: line 90: block sequence entries are not allowed in this context"`,
+	} {
+		if !strings.Contains(message, expected) {
+			t.Fatalf("message=%q missing %q", message, expected)
+		}
+	}
+	if strings.Contains(message, "/tmp/actions-runner") {
+		t.Fatalf("message leaked runner path: %q", message)
+	}
+}
+
+func TestErrorKeepsSafeYAMLProblemContainingWordToken(t *testing.T) {
+	err := &action.Error{
+		Code:    action.CodeBuildFailed,
+		Message: "LPK validation build failed",
+		Cause: &lpkgo.Error{
+			Code:  lpkgo.CodeInvalidConfig,
+			Cause: publicDetailError{message: "yaml: line 4: found character that cannot start any token"},
+		},
+	}
+	if message := err.Error(); !strings.Contains(message, `message="yaml: line 4: found character that cannot start any token"`) {
+		t.Fatalf("message=%q", message)
+	}
+}
+
+func TestErrorNormalizesWindowsBuildPath(t *testing.T) {
+	err := &action.Error{
+		Code:    action.CodeBuildFailed,
+		Message: "LPK validation build failed",
+		Cause: &lpkgo.Error{
+			Code:  lpkgo.CodeInvalidConfig,
+			Path:  `C:\actions-runner\_work\openship\lzc-manifest.yml`,
+			Cause: publicDetailError{path: `C:\actions-runner\_work\openship\lzc-manifest.yml`},
+		},
+	}
+	message := err.Error()
+	if !strings.Contains(message, "path=lzc-manifest.yml") || strings.Contains(message, "actions-runner") {
+		t.Fatalf("message=%q", message)
+	}
+}
+
+func TestErrorDoesNotExposeExpandedBuildConfigSecret(t *testing.T) {
+	const secret = "ghs_must_not_leak"
+	t.Setenv("GITHUB_TOKEN", secret)
+	root := t.TempDir()
+	for name, contents := range map[string]string{
+		"lzc-build.yml":    "manifest: ./lzc-manifest.yml\nenvs: ${GITHUB_TOKEN}\n",
+		"package.yml":      "package: cloud.lazycat.action.secret-fixture\nversion: 1.2.3\nname: Secret Fixture\n",
+		"lzc-manifest.yml": "application:\n  subdomain: secret-fixture\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, buildErr := (actionbuild.Builder{}).Build(context.Background(), actionbuild.Request{
+		Project: project.Info{
+			Root: root, BuildConfig: filepath.Join(root, "lzc-build.yml"), PackageFile: filepath.Join(root, "package.yml"),
+			ManifestFile: filepath.Join(root, "lzc-manifest.yml"), Output: filepath.Join(root, "dist", "app.lpk"),
+			PackageID: "cloud.lazycat.action.secret-fixture", Version: "1.2.3", Kind: project.KindStatic,
+		},
+		Version: "1.2.3", Tag: "v1.2.3",
+	})
+	if buildErr == nil {
+		t.Fatal("expected invalid expanded build config to fail")
+	}
+	message := (&action.Error{Code: action.CodeBuildFailed, Message: "LPK validation build failed", Cause: buildErr}).Error()
+	for _, forbidden := range []string{secret, "ghs_", "cannot unmarshal", "/tmp/"} {
+		if strings.Contains(message, forbidden) {
+			t.Fatalf("message leaked %q: %q", forbidden, message)
+		}
+	}
+	for _, expected := range []string{"upstream=INVALID_CONFIG", "path=lzc-build.yml"} {
+		if !strings.Contains(message, expected) {
+			t.Fatalf("message=%q missing %q", message, expected)
+		}
+	}
+}
+
+func TestErrorDoesNotExposeEnvironmentExpandedOpaqueCredentialPath(t *testing.T) {
+	const opaqueCredential = "AKIAIOSFODNN7EXAMPLE"
+	t.Setenv("AWS_SECRET_ACCESS_KEY", opaqueCredential)
+	root := t.TempDir()
+	for name, contents := range map[string]string{
+		"lzc-build.yml":    "manifest: ${AWS_SECRET_ACCESS_KEY}\n",
+		"package.yml":      "package: cloud.lazycat.action.opaque-path\nversion: 1.2.3\nname: Opaque Path\n",
+		"lzc-manifest.yml": "application:\n  subdomain: opaque-path\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, buildErr := (actionbuild.Builder{}).Build(context.Background(), actionbuild.Request{
+		Project: project.Info{
+			Root: root, BuildConfig: filepath.Join(root, "lzc-build.yml"), PackageFile: filepath.Join(root, "package.yml"),
+			ManifestFile: filepath.Join(root, "lzc-manifest.yml"), Output: filepath.Join(root, "dist", "app.lpk"),
+			PackageID: "cloud.lazycat.action.opaque-path", Version: "1.2.3", Kind: project.KindStatic,
+		},
+		Version: "1.2.3", Tag: "v1.2.3",
+	})
+	if buildErr == nil {
+		t.Fatal("expected environment-expanded manifest path to fail")
+	}
+	message := (&action.Error{Code: action.CodeBuildFailed, Message: "LPK validation build failed", Cause: buildErr}).Error()
+	for _, forbidden := range []string{opaqueCredential, "AWS_SECRET_ACCESS_KEY", "path=", root} {
+		if strings.Contains(message, forbidden) {
+			t.Fatalf("message leaked %q: %q", forbidden, message)
+		}
+	}
+	for _, expected := range []string{"upstream=INVALID_CONFIG", "op=build.manifest"} {
+		if !strings.Contains(message, expected) {
+			t.Fatalf("message=%q missing %q", message, expected)
+		}
+	}
+}
+
+func TestErrorSuppressesSensitivePublicDiagnostics(t *testing.T) {
+	err := &action.Error{
+		Code:    action.CodeBuildFailed,
+		Message: "LPK validation build failed",
+		Cause: &lpkgo.Error{
+			Code:  lpkgo.CodeInvalidConfig,
+			Op:    "build.template_manifest",
+			Path:  "config/client_secret.yml",
+			Cause: publicDetailError{path: "config/client_secret.yml", message: "authorization token=must-not-leak"},
+		},
+	}
+	message := err.Error()
+	if strings.Contains(message, "path=") || strings.Contains(message, "message=") || strings.Contains(message, "must-not-leak") {
+		t.Fatalf("message leaked sensitive diagnostics: %q", message)
+	}
+}
+
+func TestErrorBoundsPublicDetail(t *testing.T) {
+	err := &action.Error{
+		Code:    action.CodeBuildFailed,
+		Message: "LPK validation build failed",
+		Cause: &lpkgo.Error{
+			Code:  lpkgo.CodeInvalidManifest,
+			Cause: publicDetailError{message: strings.Repeat("x", 600)},
+		},
+	}
+	message := err.Error()
+	want := `message="` + strings.Repeat("x", 512) + `"`
+	if !strings.Contains(message, want) || strings.Contains(message, strings.Repeat("x", 513)) {
+		t.Fatalf("message was not bounded to 512 bytes: %q", message)
+	}
+}
+
+func TestErrorSuppressesTraversalAndUnicodeSeparatorPaths(t *testing.T) {
+	for _, unsafePath := range []string{"../../runner/lzc-manifest.yml", "config/lzc-\u2028manifest.yml"} {
+		err := &action.Error{
+			Code:    action.CodeBuildFailed,
+			Message: "LPK validation build failed",
+			Cause: &lpkgo.Error{
+				Code:  lpkgo.CodeInvalidManifest,
+				Path:  unsafePath,
+				Cause: publicDetailError{path: unsafePath},
+			},
+		}
+		if message := err.Error(); strings.Contains(message, "path=") || strings.Contains(message, "runner") || strings.Contains(message, "\u2028") {
+			t.Fatalf("message leaked unsafe path %q: %q", unsafePath, message)
+		}
+	}
+}
+
 type publicDetailError struct {
 	message string
+	path    string
 }
 
 func (err publicDetailError) Error() string {
@@ -248,6 +434,10 @@ func (err publicDetailError) Error() string {
 
 func (err publicDetailError) PublicErrorDetail() string {
 	return err.message
+}
+
+func (err publicDetailError) PublicErrorPath() string {
+	return err.path
 }
 
 func lpkcheckResult(path string) lpkcheck.Result {

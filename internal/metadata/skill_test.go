@@ -307,6 +307,54 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 	if !strings.Contains(reusableText, "actions/checkout@v7") || !strings.Contains(reusableText, "actions/setup-node@v7") {
 		t.Fatal("reusable workflow must use Node.js 24-compatible checkout/setup-node v7 Actions")
 	}
+	for _, required := range []string{
+		"actions/setup-go@v7",
+		"actions/upload-artifact@v7",
+		"actions/github-script@v9",
+		"docker/login-action@v4",
+		"docker/setup-qemu-action@v4",
+		"docker/setup-buildx-action@v4",
+		"peter-evans/create-pull-request@v8",
+		"softprops/action-gh-release@v3",
+	} {
+		if !strings.Contains(reusableText, required) {
+			t.Fatalf("reusable workflow is missing current GitHub Action major %q", required)
+		}
+		if !strings.Contains(text, required) {
+			t.Fatalf("SKILL.md is missing current GitHub Action major %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"actions/setup-go@v6",
+		"actions/upload-artifact@v6",
+		"actions/github-script@v8",
+		"docker/login-action@v3",
+		"docker/setup-qemu-action@v3",
+		"docker/setup-buildx-action@v3",
+		"peter-evans/create-pull-request@v7",
+		"softprops/action-gh-release@v2",
+	} {
+		if strings.Contains(reusableText, forbidden) || strings.Contains(text, forbidden) {
+			t.Fatalf("workflow or SKILL.md still references superseded GitHub Action major %q", forbidden)
+		}
+	}
+	releaseWorkflow, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "release.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"actions/checkout@v7",
+		"docker/setup-qemu-action@v4",
+		"anchore/sbom-action/download-syft@v0",
+		"actions/attest-build-provenance@v4",
+	} {
+		if !strings.Contains(string(releaseWorkflow), required) || !strings.Contains(text, required) {
+			t.Fatalf("release workflow and SKILL.md must use current GitHub Action major %q", required)
+		}
+	}
+	if strings.Contains(string(releaseWorkflow), "actions/attest-build-provenance@v3") || strings.Contains(text, "actions/attest-build-provenance@v3") {
+		t.Fatal("release workflow or SKILL.md still references attest-build-provenance v3")
+	}
 	for _, forbidden := range []string{"actions/checkout@v4", "actions/setup-node@v4"} {
 		if strings.Contains(reusableText, forbidden) {
 			t.Fatalf("reusable workflow contains deprecated Node.js 20 Action %q", forbidden)
