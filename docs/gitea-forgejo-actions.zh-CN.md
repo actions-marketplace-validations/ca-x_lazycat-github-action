@@ -192,7 +192,7 @@ stores:
     sha256: ${{ steps.lazycat-build.outputs.sha256 }}
 ```
 
-懒猫开发者平台凭据只需要 `LZC_API_TOKEN`，并应保存在平台的 Secret 管理功能中。`LZC_API_HOST` 仅用于覆盖生产默认域名。
+懒猫开发者平台优先使用保存在 Secret 管理功能中的 PAT `LZC_API_TOKEN`。历史自动化也可以继续把 lzc-cli 会话 token 作为 `LAZYCAT_TOKEN` 传入；两个名称选择不同的认证协议，同时设置时优先使用 `LZC_API_TOKEN`。`LZC_API_HOST` 仅用于覆盖 PAT API 的生产默认域名。
 
 ## 启动文件下载和内网环境
 

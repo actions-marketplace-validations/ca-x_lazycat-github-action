@@ -97,13 +97,14 @@ Use `update.strategy: publish`. Configure repository/organization secrets:
 ```text
 LZC_API_HOST
 LZC_API_TOKEN
+LAZYCAT_TOKEN (legacy fallback)
 APPSTORE_URL
 APPSTORE_TOKEN
 APP_ID
 PRIVATE_STORE_GROUP_CODES
 ```
 
-Configure `LZC_API_TOKEN` whenever LazyCat image delivery or official publishing is enabled. `LZC_API_HOST` is an optional override of the production default. `APP_ID` is optional. `PRIVATE_STORE_GROUP_CODES` is an optional comma-separated GitHub Secret; never expose it as a normal workflow input.
+Configure a PAT in `LZC_API_TOKEN` for new LazyCat image-delivery or official-publishing callers. Existing callers may keep mapping their lzc-cli session token as `LAZYCAT_TOKEN`; the reusable workflow passes the variables separately so the Action preserves their authentication protocols. `LZC_API_TOKEN` wins when both are set. The workflow does not create, copy, or synchronize GitHub Secrets. `LZC_API_HOST` is an optional PAT API override. `APP_ID` is optional. `PRIVATE_STORE_GROUP_CODES` is an optional comma-separated GitHub Secret; never expose it as a normal workflow input.
 
 Publishing callers must assign required Secrets explicitly. `secrets: inherit` alone is not sufficient documentation and can hide that an Organization Secret has not authorized a newly added repository.
 

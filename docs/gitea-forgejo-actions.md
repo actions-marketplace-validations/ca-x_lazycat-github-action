@@ -192,7 +192,7 @@ Build the LPK first, then pass the verified path and SHA256 to a second Action s
     sha256: ${{ steps.lazycat-build.outputs.sha256 }}
 ```
 
-`LZC_API_TOKEN` is the LazyCat developer-platform credential and must be stored in the platform's secret manager. `LZC_API_HOST` optionally overrides the production default.
+`LZC_API_TOKEN` is the preferred LazyCat developer-platform PAT and must be stored in the platform's secret manager. Existing automation may instead pass its lzc-cli session token as `LAZYCAT_TOKEN`; the two names select different authentication protocols. `LZC_API_TOKEN` wins when both are set. `LZC_API_HOST` optionally overrides the PAT API production default.
 
 ## Bootstrap downloads and private networks
 

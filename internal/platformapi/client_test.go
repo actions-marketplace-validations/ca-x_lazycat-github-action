@@ -39,6 +39,17 @@ func TestHostRejectsUnsafeOverrides(t *testing.T) {
 	}
 }
 
+func TestResolveBaseURLUsesProvidedSnapshot(t *testing.T) {
+	t.Setenv("LZC_API_HOST", "environment.example.invalid")
+	got, err := platformapi.ResolveBaseURL("snapshot.example.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "https://snapshot.example.invalid" {
+		t.Fatalf("base URL=%q", got)
+	}
+}
+
 func TestAppStoreCOSBaseURLUsesProductionDefault(t *testing.T) {
 	t.Setenv("LZC_APPSTORE_COS_DOMAIN", "")
 	got, err := platformapi.AppStoreCOSBaseURL()

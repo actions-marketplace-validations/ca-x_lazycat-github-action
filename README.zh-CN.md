@@ -191,7 +191,7 @@ stores:
 
 `allow_downgrade` 默认为 `false`。版本来源镜像完成标签到 SemVer 的映射后，如果候选版本低于当前 `package.yml.version`，Action 会在复制镜像和修改文件前阻止降级。版本相同仍可刷新镜像引用或 digest。只有明确执行回退时才设置为 `true`。
 
-生产环境默认使用 `appstore.api.lazycat.cloud`，只需把 PAT 保存为 GitHub Secret `LZC_API_TOKEN`。需要切换环境时，可用 `LZC_API_HOST` 覆盖默认域名。
+生产环境默认使用 `appstore.api.lazycat.cloud`，建议把 PAT 保存为 GitHub Secret `LZC_API_TOKEN`。历史 workflow 可以继续把原有 lzc-cli 会话 token 保存在 `LAZYCAT_TOKEN`。需要切换 PAT API 环境时，可用 `LZC_API_HOST` 覆盖默认域名。
 
 再添加定时和手动触发 workflow：
 
@@ -339,7 +339,7 @@ delivery:
 
 Action 把选中的源镜像提交给懒猫开发者平台，并把 `Platform` 设置为 `project.target_arch`（默认 `amd64`，可选 `arm64`）。开发者平台执行远端 Registry-to-Registry 复制，返回最终的 `registry.lazycat.cloud/...` 地址。本地 Docker 不参与这次复制。
 
-该模式需要 `LZC_API_TOKEN`。`LZC_API_HOST` 默认使用 `appstore.api.lazycat.cloud`，可通过环境变量覆盖。启用官方商店模式时只能使用这种交付方式。
+该模式优先使用 `LZC_API_TOKEN` 中的 PAT；历史 workflow 可以继续使用 `LAZYCAT_TOKEN` 中的 lzc-cli 会话 token。PAT 认证的 `LZC_API_HOST` 默认使用 `appstore.api.lazycat.cloud`，可通过环境变量覆盖。启用官方商店模式时只能使用这种交付方式。
 
 ### 显式镜像加速地址
 
@@ -394,7 +394,7 @@ reusable workflow 使用 `docker/login-action` 写入 Docker 凭据，OCI 客户
 
 ## 认证
 
-LazyCat 镜像复制和官方 LPK 提交必须提供 PAT：
+LazyCat 镜像复制和官方 LPK 提交优先使用 PAT：
 
     export LZC_API_TOKEN='your-personal-access-token'
 
@@ -403,11 +403,15 @@ LazyCat 镜像复制和官方 LPK 提交必须提供 PAT：
     LZC_API_HOST=appstore.api.lazycat.cloud
     LZC_APPSTORE_COS_DOMAIN=dl.lazycat.cloud
 
-两个域名都可以通过同名外部环境变量覆盖。覆盖值只填写域名，不包含协议和路径。Action 使用 HTTPS，并把开发者平台请求发送到 /sdk/v3/developer。认证只使用 X-API-Token；不会登录，不发送 X-User-Token，也不会发送 userToken Cookie。`LZC_APPSTORE_COS_DOMAIN` 只用于 `skip_if_version_exists` 匿名查询，PAT 不会发送到该域名。
+历史 workflow 也可以继续使用原有 lzc-cli 会话 token：
 
-reusable workflow 必须使用 GitHub Secret `LZC_API_TOKEN`；`LZC_API_HOST` 是可选的环境覆盖。本地或直接调用 composite Action 时，也可以设置 `LZC_APPSTORE_COS_DOMAIN` 覆盖生产目录。PAT 不得写入仓库配置、workflow 普通输入或日志。
+    LAZYCAT_TOKEN='your-existing-lzc-cli-session-token'
 
-项目构建会执行仓库中的 buildscript。Action 会从 buildscript 环境中移除 LZC_API_HOST、LZC_APPSTORE_COS_DOMAIN、LZC_API_TOKEN、Registry 凭据、GitHub token，以及 GitHub output/control 文件路径。带写权限的发布 workflow 应只用于可信分支、tag、定时任务和手动运行，不要把 Secrets 暴露给不可信 Pull Request 代码。
+两个变量选择的是不同认证协议，不是别名。`LZC_API_TOKEN` 使用 `/sdk/v3/developer` 和 `X-API-Token`；`LAZYCAT_TOKEN` 保留历史开发者接口和 `X-User-Token` 会话认证。两者同时存在时优先使用 `LZC_API_TOKEN`。`LZC_API_HOST` 只作用于 PAT API，默认使用 `appstore.api.lazycat.cloud`。`LZC_APPSTORE_COS_DOMAIN` 只用于 `skip_if_version_exists` 匿名查询，任何凭据都不会发送到该域名。域名覆盖值只填写域名，不包含协议和路径。
+
+reusable workflow 会分别传递 `LZC_API_TOKEN` 和 `LAZYCAT_TOKEN`，由嵌套 Action 保留各自的协议语义；它不会创建、复制或同步 GitHub Secrets。历史 caller 可以只保留 `LAZYCAT_TOKEN`，新 caller 建议只配置 `LZC_API_TOKEN`。本地或直接调用 composite Action 时采用相同的优先级。任何凭据都不得写入仓库配置、workflow 普通输入或日志。
+
+项目构建会执行仓库中的 buildscript。Action 会从 buildscript 环境中移除 LZC_API_HOST、LZC_APPSTORE_COS_DOMAIN、LZC_API_TOKEN、LAZYCAT_TOKEN、Registry 凭据、GitHub token，以及 GitHub output/control 文件路径。带写权限的发布 workflow 应只用于可信分支、tag、定时任务和手动运行，不要把 Secrets 暴露给不可信 Pull Request 代码。
 
 ## Pull Request 和 Release 工作流
 

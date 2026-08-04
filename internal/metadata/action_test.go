@@ -43,7 +43,7 @@ func TestReleaseWorkflowRejectsBootstrapVersionMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, required := range []string{"Verify Action bootstrap version", "LAZYCAT_ACTION_VERSION", "github.ref_name", "action.yml"} {
+	for _, required := range []string{"Verify Action bootstrap version", "LAZYCAT_ACTION_VERSION", "github.ref_name", "action.yml", ".github/workflows/lazycat.yml", "workflow_refs"} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("release workflow is missing bootstrap version gate %q", required)
 		}
@@ -75,7 +75,7 @@ func TestReusableWorkflowContractAndActionRefs(t *testing.T) {
 		}
 	}
 	secrets, _ := call["secrets"].(map[string]any)
-	for _, name := range []string{"LZC_API_HOST", "LZC_API_TOKEN", "APPSTORE_URL", "APPSTORE_TOKEN", "APP_ID", "PRIVATE_STORE_GROUP_CODES", "REGISTRY", "REGISTRY_USERNAME", "REGISTRY_PASSWORD"} {
+	for _, name := range []string{"LZC_API_HOST", "LZC_API_TOKEN", "LAZYCAT_TOKEN", "APPSTORE_URL", "APPSTORE_TOKEN", "APP_ID", "PRIVATE_STORE_GROUP_CODES", "REGISTRY", "REGISTRY_USERNAME", "REGISTRY_PASSWORD"} {
 		if _, found := secrets[name]; !found {
 			t.Fatalf("missing workflow secret %q", name)
 		}
@@ -92,6 +92,8 @@ func TestReusableWorkflowContractAndActionRefs(t *testing.T) {
 			t.Fatalf("workflow permission %q=%#v, want write", name, got)
 		}
 	}
+	actionVersion := actionBootstrapVersion(t)
+	internalActionRefs := 0
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "uses: ") {
@@ -99,7 +101,11 @@ func TestReusableWorkflowContractAndActionRefs(t *testing.T) {
 		}
 		value := strings.TrimSpace(strings.TrimPrefix(line, "uses: "))
 		value = strings.Fields(value)[0]
-		if value == "ca-x/lazycat-github-action@v1" {
+		if strings.HasPrefix(value, "ca-x/lazycat-github-action@") {
+			internalActionRefs++
+			if value != "ca-x/lazycat-github-action@"+actionVersion {
+				t.Fatalf("reusable workflow Action ref %q must match action.yml bootstrap version %q", value, actionVersion)
+			}
 			continue
 		}
 		parts := strings.Split(value, "@")
@@ -107,7 +113,18 @@ func TestReusableWorkflowContractAndActionRefs(t *testing.T) {
 			t.Fatalf("third-party Action must use a major vN tag: %s", value)
 		}
 	}
+	if internalActionRefs != 4 {
+		t.Fatalf("reusable workflow internal Action refs=%d, want 4", internalActionRefs)
+	}
 	workflow := string(data)
+	const patMapping = "LZC_API_TOKEN: ${{ secrets.LZC_API_TOKEN }}"
+	if count := strings.Count(workflow, patMapping); count != 3 {
+		t.Fatalf("reusable workflow PAT mapping count=%d, want 3", count)
+	}
+	const legacyMapping = "LAZYCAT_TOKEN: ${{ secrets.LAZYCAT_TOKEN }}"
+	if count := strings.Count(workflow, legacyMapping); count != 3 {
+		t.Fatalf("reusable workflow legacy session mapping count=%d, want 3", count)
+	}
 	for _, condition := range []string{
 		"steps.lazycat.outputs.operation == 'check' && steps.lazycat.outputs.changed == 'true' && steps.lazycat.outputs.update-strategy == 'pull'",
 		"steps.lazycat.outputs.operation == 'check' && steps.lazycat.outputs.changed == 'true' && steps.lazycat.outputs.update-strategy == 'publish'",
@@ -358,9 +375,30 @@ func TestActionMetadataExposesStableContract(t *testing.T) {
 	if document.Runs.Using != "composite" {
 		t.Fatalf("runs.using=%q", document.Runs.Using)
 	}
-	if !strings.Contains(string(data), "LAZYCAT_ACTION_VERSION: v1.2.0") {
-		t.Fatal("action.yml must bootstrap release v1.2.0")
+	if got := actionBootstrapVersion(t); got != "v1.2.0" {
+		t.Fatalf("action.yml bootstrap version=%q, want v1.2.0", got)
 	}
+}
+
+func actionBootstrapVersion(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "..", "action.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const prefix = "LAZYCAT_ACTION_VERSION:"
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) {
+			version := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+			if version == "" {
+				t.Fatal("action.yml bootstrap version is empty")
+			}
+			return version
+		}
+	}
+	t.Fatal("action.yml bootstrap version is missing")
+	return ""
 }
 
 func TestReusableWorkflowRecoversMissingReleaseForUnchangedPublish(t *testing.T) {

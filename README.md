@@ -191,7 +191,7 @@ stores:
 
 `allow_downgrade` defaults to `false`. After the version-source image tag is mapped to SemVer, the Action blocks a version lower than the current `package.yml.version` before image copying or file edits. Equal versions remain eligible for image-reference or digest refresh. Set it to `true` only for an intentional rollback.
 
-Production defaults to `appstore.api.lazycat.cloud`; store only the PAT as the `LZC_API_TOKEN` GitHub secret. Set `LZC_API_HOST` only to override the default host.
+Production defaults to `appstore.api.lazycat.cloud`; store the PAT as the `LZC_API_TOKEN` GitHub secret. Existing workflows may continue using their lzc-cli session token under `LAZYCAT_TOKEN`. Set `LZC_API_HOST` only to override the PAT API host.
 
 Then add a scheduled and manual caller workflow:
 
@@ -339,7 +339,7 @@ delivery:
 
 The Action sends the selected source reference to the LazyCat developer platform with `Platform` equal to `project.target_arch` (`amd64` by default, optionally `arm64`). The platform performs a remote Registry-to-Registry copy and returns the final `registry.lazycat.cloud/...` reference. Local Docker is not used for this copy.
 
-This mode requires `LZC_API_TOKEN`. `LZC_API_HOST` defaults to `appstore.api.lazycat.cloud` and may be overridden. It is the only delivery mode accepted when `stores.official.enabled` is true.
+This mode prefers a PAT in `LZC_API_TOKEN`; existing workflows may keep their legacy lzc-cli session token in `LAZYCAT_TOKEN`. `LZC_API_HOST` defaults to `appstore.api.lazycat.cloud` for PAT authentication and may be overridden. It is the only delivery mode accepted when `stores.official.enabled` is true.
 
 ### Explicit mirror
 
@@ -394,7 +394,7 @@ The reusable workflow runs `docker/login-action`, which writes Docker credential
 
 ## Authentication
 
-LazyCat image copy and official LPK publishing require a PAT:
+LazyCat image copy and official LPK publishing prefer a PAT:
 
 ```text
 LZC_API_TOKEN=your-personal-access-token
@@ -407,9 +407,15 @@ LZC_API_HOST=appstore.api.lazycat.cloud
 LZC_APPSTORE_COS_DOMAIN=dl.lazycat.cloud
 ```
 
-Either domain can be overridden by its environment variable. Override values must contain only a host name, without a scheme or path. The Action uses HTTPS, sends developer-platform requests under `/sdk/v3/developer`, and authenticates only with `X-API-Token`. It does not send `X-User-Token` or a `userToken` Cookie. `LZC_APPSTORE_COS_DOMAIN` is used only for anonymous `skip_if_version_exists` lookups, and the PAT is never sent to that domain.
+Existing workflows may instead keep their lzc-cli session token under the historical name:
 
-The reusable workflow requires the `LZC_API_TOKEN` GitHub Secret; `LZC_API_HOST` is an optional override. Direct composite or local callers may additionally override `LZC_APPSTORE_COS_DOMAIN`. Never put the PAT in repository configuration, normal workflow inputs, or logs. Project build scripts do not receive any of these variables.
+```text
+LAZYCAT_TOKEN=your-existing-lzc-cli-session-token
+```
+
+The two variables select different authentication protocols; they are not aliases. `LZC_API_TOKEN` sends requests under `/sdk/v3/developer` with `X-API-Token`. `LAZYCAT_TOKEN` preserves the legacy developer endpoints and `X-User-Token` session authentication. When both are set, `LZC_API_TOKEN` wins. `LZC_API_HOST` applies to the PAT API and defaults to `appstore.api.lazycat.cloud`. `LZC_APPSTORE_COS_DOMAIN` is used only for anonymous `skip_if_version_exists` lookups, and credentials are never sent to that domain. Domain overrides contain only a host name, without a scheme or path.
+
+The reusable workflow passes `LZC_API_TOKEN` and `LAZYCAT_TOKEN` separately so the nested Action can preserve their protocol semantics. It does not create, copy, or synchronize GitHub Secrets. Historical callers can keep only `LAZYCAT_TOKEN`; new callers should configure only `LZC_API_TOKEN`. Direct composite and local callers use the same precedence. Never put either credential in repository configuration, normal workflow inputs, or logs. Project build scripts do not receive either variable.
 
 ## Pull request and Release workflows
 

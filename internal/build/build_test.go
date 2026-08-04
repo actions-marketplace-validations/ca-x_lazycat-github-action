@@ -23,6 +23,10 @@ import (
 
 func TestBuilderBuildsVerifiesAndHashesLPKForLinuxAMD64(t *testing.T) {
 	for key, value := range map[string]string{
+		"LAZYCAT_PASSWORD":          "legacy-password-secret",
+		"LAZYCAT_TOKEN":             "legacy-session-secret",
+		"LAZYCAT_USERNAME":          "legacy-user",
+		"LZC_CLI_TOKEN":             "legacy-cli-secret",
 		"LZC_API_HOST":              "api.example.invalid",
 		"LZC_APPSTORE_COS_DOMAIN":   "cos.example.com",
 		"LZC_API_TOKEN":             "pat-secret",
@@ -78,7 +82,7 @@ func TestBuilderBuildsVerifiesAndHashesLPKForLinuxAMD64(t *testing.T) {
 			t.Fatalf("env[%s]=%q want=%q", key, runner.command.Env[key], want)
 		}
 	}
-	for _, key := range []string{"LZC_API_HOST", "LZC_APPSTORE_COS_DOMAIN", "LZC_API_TOKEN", "APPSTORE_TOKEN", "APPSTORE_URL", "APP_ID", "PRIVATE_STORE_GROUP_CODES", "INPUT_SHA256", "REGISTRY_USERNAME", "REGISTRY_PASSWORD", "GITHUB_TOKEN", "GITHUB_OUTPUT", "GITHUB_STEP_SUMMARY", "ACTIONS_RUNTIME_TOKEN", "ACTIONS_RESULTS_URL"} {
+	for _, key := range []string{"LAZYCAT_PASSWORD", "LAZYCAT_TOKEN", "LAZYCAT_USERNAME", "LZC_CLI_TOKEN", "LZC_API_HOST", "LZC_APPSTORE_COS_DOMAIN", "LZC_API_TOKEN", "APPSTORE_TOKEN", "APPSTORE_URL", "APP_ID", "PRIVATE_STORE_GROUP_CODES", "INPUT_SHA256", "REGISTRY_USERNAME", "REGISTRY_PASSWORD", "GITHUB_TOKEN", "GITHUB_OUTPUT", "GITHUB_STEP_SUMMARY", "ACTIONS_RUNTIME_TOKEN", "ACTIONS_RESULTS_URL"} {
 		if _, found := runner.command.Env[key]; found {
 			t.Fatalf("protected environment %s reached buildscript", key)
 		}

@@ -19,7 +19,11 @@ const (
 )
 
 func Host() (string, error) {
-	host := strings.TrimSpace(os.Getenv("LZC_API_HOST"))
+	return ResolveHost(os.Getenv("LZC_API_HOST"))
+}
+
+func ResolveHost(configured string) (string, error) {
+	host := strings.TrimSpace(configured)
 	if host == "" {
 		host = defaultAPIHost
 	}
@@ -35,6 +39,14 @@ func BaseURL() string {
 		return invalidAPIHostBaseURL
 	}
 	return "https://" + host
+}
+
+func ResolveBaseURL(configured string) (string, error) {
+	host, err := ResolveHost(configured)
+	if err != nil {
+		return "", err
+	}
+	return "https://" + host, nil
 }
 
 func AppStoreCOSBaseURL() (string, error) {

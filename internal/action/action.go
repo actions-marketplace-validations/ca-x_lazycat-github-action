@@ -12,11 +12,14 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	actionbuild "github.com/ca-x/lazycat-github-action/internal/build"
 	"github.com/ca-x/lazycat-github-action/internal/config"
 	"github.com/ca-x/lazycat-github-action/internal/delivery"
 	"github.com/ca-x/lazycat-github-action/internal/diagnostic"
+	"github.com/ca-x/lazycat-github-action/internal/httpx"
 	"github.com/ca-x/lazycat-github-action/internal/imageflow"
 	"github.com/ca-x/lazycat-github-action/internal/platform"
 	"github.com/ca-x/lazycat-github-action/internal/platformapi"
@@ -171,10 +174,8 @@ func DefaultDependencies(host platform.Host) Dependencies {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	builder := actionbuild.Builder{Logger: logger}
 	registryClient := registry.New()
-	token := platformauth.NewProvider(platformauth.Resolver{})
-	storeClient := appstore.New(appstore.Options{
-		BaseURL: platformapi.BaseURL(), HTTPClient: platformapi.HTTPClient(nil), Token: token,
-	})
+	resolver := platformauth.Resolver{}
+	storeClient := &platformImageCopier{resolver: resolver}
 	imageFlow := imageflow.Flow{
 		Registry:  registryClient,
 		Deliverer: delivery.Resolver{Copier: storeClient, Inspector: registryClient},
@@ -192,6 +193,45 @@ func DefaultDependencies(host platform.Host) Dependencies {
 		CheckImages: imageFlow.Check,
 		Publish:     publishFlow.Publish,
 	}
+}
+
+type platformImageCopier struct {
+	resolver platformauth.Resolver
+	mu       sync.Mutex
+	client   *appstore.Client
+}
+
+func (copier *platformImageCopier) CopyImage(ctx context.Context, request appstore.CopyImageRequest) (appstore.CopyImageResult, error) {
+	client, err := copier.clientFor(ctx)
+	if err != nil {
+		return appstore.CopyImageResult{}, err
+	}
+	return client.CopyImage(ctx, request)
+}
+
+func (copier *platformImageCopier) clientFor(ctx context.Context) (*appstore.Client, error) {
+	copier.mu.Lock()
+	defer copier.mu.Unlock()
+	if copier.client != nil {
+		return copier.client, nil
+	}
+	resolved, err := copier.resolver.Resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
+	copier.client = appstore.New(platformStoreOptions(resolved))
+	return copier.client, nil
+}
+
+func platformStoreOptions(resolved platformauth.Result) appstore.Options {
+	options := appstore.Options{Token: resolved.Provider}
+	if resolved.Protocol == platformauth.ProtocolPAT {
+		options.BaseURL = resolved.BaseURL
+		options.HTTPClient = platformapi.HTTPClient(nil)
+	} else {
+		options.HTTPClient = httpx.NoRedirect(nil, 30*time.Second)
+	}
+	return options
 }
 
 func ResolveOperation(input Input) (Operation, error) {

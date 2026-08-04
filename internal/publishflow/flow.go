@@ -64,31 +64,38 @@ type PrivatePublisher interface {
 }
 
 type Flow struct {
-	Verify           func(context.Context, lpkcheck.Request) (lpkcheck.Result, error)
-	PrecheckOfficial func(context.Context, string) error
-	ResolveAuth      func(context.Context) (platformauth.Result, error)
-	PublishOfficial  func(context.Context, official.Request) (official.Result, error)
-	LookupVersion    storelookup.Lookup
-	LookupEnv        func(string) (string, bool)
-	NewPrivate       func(private.Options) (PrivatePublisher, error)
-	Logger           *slog.Logger
+	Verify            func(context.Context, lpkcheck.Request) (lpkcheck.Result, error)
+	PrecheckOfficial  func(context.Context, string) error
+	ResolveAuth       func(context.Context) (platformauth.Result, error)
+	PublishOfficial   func(context.Context, official.Request) (official.Result, error)
+	ConfigureOfficial func(platformauth.Result) official.Publisher
+	LookupVersion     storelookup.Lookup
+	LookupEnv         func(string) (string, bool)
+	NewPrivate        func(private.Options) (PrivatePublisher, error)
+	Logger            *slog.Logger
 }
 
 func Default() Flow {
 	resolver := platformauth.Resolver{}
-	officialPublisher := official.Publisher{
-		BaseURL: platformapi.BaseURL(), HTTPClient: platformapi.HTTPClient(nil), SDK: true,
-	}
 	return Flow{
-		Verify:           lpkcheck.File,
-		PrecheckOfficial: official.PrecheckFile,
-		ResolveAuth:      resolver.Resolve,
-		PublishOfficial:  officialPublisher.Publish,
-		LookupVersion:    storelookup.Default,
-		LookupEnv:        os.LookupEnv,
+		Verify:            lpkcheck.File,
+		PrecheckOfficial:  official.PrecheckFile,
+		ResolveAuth:       resolver.Resolve,
+		ConfigureOfficial: platformPublisher,
+		LookupVersion:     storelookup.Default,
+		LookupEnv:         os.LookupEnv,
 		NewPrivate: func(options private.Options) (PrivatePublisher, error) {
 			return private.New(options)
 		},
+	}
+}
+
+func platformPublisher(resolved platformauth.Result) official.Publisher {
+	if resolved.Protocol == platformauth.ProtocolLegacySession {
+		return official.Publisher{}
+	}
+	return official.Publisher{
+		BaseURL: resolved.BaseURL, HTTPClient: platformapi.HTTPClient(nil), SDK: true,
 	}
 }
 
@@ -275,7 +282,7 @@ func (flow Flow) publishOfficial(ctx context.Context, request Request, result Re
 		result.Official = &official.Result{PackageID: input.PackageID, Version: input.Version, SHA256: input.SHA256}
 		return result, nil
 	}
-	if flow.ResolveAuth == nil || flow.PublishOfficial == nil {
+	if flow.ResolveAuth == nil || flow.PublishOfficial == nil && flow.ConfigureOfficial == nil {
 		return Result{}, errors.New("official publisher dependencies are unavailable")
 	}
 	resolved, err := flow.ResolveAuth(ctx)
@@ -283,7 +290,11 @@ func (flow Flow) publishOfficial(ctx context.Context, request Request, result Re
 		return Result{}, fmt.Errorf("resolve official credentials: %w", err)
 	}
 	input.Provider = resolved.Provider
-	published, err := flow.PublishOfficial(ctx, input)
+	publish := flow.PublishOfficial
+	if flow.ConfigureOfficial != nil {
+		publish = flow.ConfigureOfficial(resolved).Publish
+	}
+	published, err := publish(ctx, input)
 	if err != nil {
 		return Result{}, fmt.Errorf("publish official store: %w", err)
 	}

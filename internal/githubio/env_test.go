@@ -66,6 +66,7 @@ func TestReadInputReadsReleaseTagFromEventFile(t *testing.T) {
 
 func TestWriteOutputsUsesStableKeysAndDoesNotLeakSecrets(t *testing.T) {
 	for key, value := range map[string]string{
+		"LAZYCAT_TOKEN": "lazycat-secret", "LZC_CLI_TOKEN": "cli-secret", "LAZYCAT_PASSWORD": "password-secret",
 		"LZC_API_HOST": "api.example.invalid", "LZC_API_TOKEN": "pat-secret", "APPSTORE_TOKEN": "store-secret",
 	} {
 		t.Setenv(key, value)
@@ -84,7 +85,7 @@ func TestWriteOutputsUsesStableKeysAndDoesNotLeakSecrets(t *testing.T) {
 			t.Fatalf("missing key %q in:\n%s", key, got)
 		}
 	}
-	for _, secret := range []string{"lazycat-secret", "cli-secret", "password-secret", "store-secret"} {
+	for _, secret := range []string{"lazycat-secret", "cli-secret", "password-secret", "pat-secret", "store-secret"} {
 		if strings.Contains(got, secret) {
 			t.Fatalf("output leaked secret %q", secret)
 		}

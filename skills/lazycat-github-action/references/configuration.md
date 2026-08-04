@@ -179,7 +179,7 @@ For agent-generated screenshots, use `agent-browser` to open the application at 
 
 Official lint does not turn every compatibility warning into a failure. Unknown `container_name` remains a visible warning; only official warnings block the official precheck, and an equal/newer online version skips before that precheck. Official HTTP failures keep the safe stage and status. The raw body is hidden, while a recognized JSON `message`, `msg`, string `error`, or nested `error.message`/`error.msg` may be displayed after one-line normalization, a 512-byte limit, and credential suppression.
 
-LazyCat developer-platform writes require `LZC_API_TOKEN`. Production defaults are `LZC_API_HOST=appstore.api.lazycat.cloud` and `LZC_APPSTORE_COS_DOMAIN=dl.lazycat.cloud`; either domain may be overridden through its environment variable. Override values contain no scheme or path. The PAT is sent only as `X-API-Token`; username/password login, lzc-cli tokens, and token files are unsupported.
+LazyCat developer-platform writes prefer a PAT in `LZC_API_TOKEN`. Existing callers may retain an lzc-cli session token in `LAZYCAT_TOKEN`; that path preserves the legacy developer endpoints and `X-User-Token` authentication. These variables are not aliases, and `LZC_API_TOKEN` wins when both are set. The reusable workflow passes them separately without creating, copying, or synchronizing GitHub Secrets. PAT production defaults are `LZC_API_HOST=appstore.api.lazycat.cloud` and `LZC_APPSTORE_COS_DOMAIN=dl.lazycat.cloud`; either domain may be overridden through its environment variable. Override values contain no scheme or path. Username/password login, `LZC_CLI_TOKEN`, and token files remain unsupported.
 
 ## MiaoMiao private store
 
