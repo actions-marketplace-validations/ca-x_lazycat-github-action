@@ -39,10 +39,6 @@ inputs:
     description: Confirmed GitHub Release Asset SHA256 required by publish operations.
     required: false
     default: ""
-  token-file:
-    description: Explicit lzc-cli-compatible token JSON file for self-hosted runners.
-    required: false
-    default: ""
   dry-run:
     description: Calculate the plan without changing files or remote state.
     required: false
@@ -114,7 +110,7 @@ runs:
       id: run
       shell: bash
       env:
-        LAZYCAT_ACTION_VERSION: v1.1.24
+        LAZYCAT_ACTION_VERSION: v1.2.0
         INPUT_OPERATION: ${{ inputs.operation }}
         INPUT_CONFIG: ${{ inputs.config }}
         INPUT_IMAGE_ID: ${{ inputs['image-id'] }}
@@ -123,6 +119,5 @@ runs:
         INPUT_LPK_PATH: ${{ inputs['lpk-path'] }}
         INPUT_DOWNLOAD_URL: ${{ inputs['download-url'] }}
         INPUT_SHA256: ${{ inputs.sha256 }}
-        INPUT_TOKEN_FILE: ${{ inputs['token-file'] }}
         INPUT_DRY_RUN: ${{ inputs['dry-run'] }}
       run: "${{ github.action_path }}/scripts/run-action.sh"

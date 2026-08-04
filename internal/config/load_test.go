@@ -559,6 +559,20 @@ update:
 			wantErr: "output must remain beneath project root",
 		},
 		{
+			name: "docker toolchain version is rejected",
+			yaml: `version: 1
+project: {}
+update:
+  version_source:
+    type: git
+build:
+  toolchains:
+    - kind: docker
+      version: "27"
+`,
+			wantErr: "docker toolchain version is not supported",
+		},
+		{
 			name: "duplicate toolchains",
 			yaml: `version: 1
 project: {}

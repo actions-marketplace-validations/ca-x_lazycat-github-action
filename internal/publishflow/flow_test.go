@@ -33,8 +33,8 @@ func TestPublishOfficialPropagatesVerifiedArtifactAndRetryPolicy(t *testing.T) {
 			return verifiedArtifact(), nil
 		},
 		PrecheckOfficial: passOfficialPrecheck,
-		ResolveAuth: func(context.Context, platformauth.Request) (platformauth.Result, error) {
-			return platformauth.Result{Provider: auth.StaticToken("secret"), Source: platformauth.SourceLazyCatToken}, nil
+		ResolveAuth: func(context.Context) (platformauth.Result, error) {
+			return platformauth.Result{Provider: auth.StaticToken("secret")}, nil
 		},
 		PublishOfficial: func(_ context.Context, request official.Request) (official.Result, error) {
 			published = request
@@ -48,7 +48,7 @@ func TestPublishOfficialPropagatesVerifiedArtifactAndRetryPolicy(t *testing.T) {
 	}
 	result, err := flow.Publish(context.Background(), publishflow.Request{
 		Target: publishflow.TargetOfficial, Config: cfg, Project: projectInfo(), LPKPath: "/repo/dist/app.lpk",
-		Version: "1.2.3", Changelog: "Release notes", TokenFile: "/tmp/token.json",
+		Version: "1.2.3", Changelog: "Release notes",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestPublishOfficialPrecheckRunsAfterLookupBeforeAuthenticationAndPublish(t 
 			calls = append(calls, "lookup")
 			return storelookup.Result{}, lpkgo.ErrNotFound
 		},
-		ResolveAuth: func(context.Context, platformauth.Request) (platformauth.Result, error) {
+		ResolveAuth: func(context.Context) (platformauth.Result, error) {
 			t.Fatal("official precheck failure must prevent authentication")
 			return platformauth.Result{}, nil
 		},
@@ -166,6 +166,7 @@ func TestFlowVerifiesConfiguredARM64Artifact(t *testing.T) {
 }
 
 func TestFlowSkipsOfficialPublishWhenOnlineVersionMatches(t *testing.T) {
+	t.Setenv("LZC_APPSTORE_COS_DOMAIN", "cos.example.com")
 	lookupCalls := 0
 	flow := publishflow.Flow{
 		Verify: func(context.Context, lpkcheck.Request) (lpkcheck.Result, error) { return verifiedArtifact(), nil },
@@ -175,12 +176,12 @@ func TestFlowSkipsOfficialPublishWhenOnlineVersionMatches(t *testing.T) {
 		},
 		LookupVersion: func(_ context.Context, request storelookup.Request) (storelookup.Result, error) {
 			lookupCalls++
-			if request.Store != storelookup.StoreOfficial || request.PackageID != "cloud.lazycat.example" {
+			if request.Store != storelookup.StoreOfficial || request.PackageID != "cloud.lazycat.example" || request.BaseURL != "https://cos.example.com/appstore/metarepo" {
 				t.Fatalf("lookup request=%#v", request)
 			}
 			return storelookup.Result{OnlineVersion: "1.2.3"}, nil
 		},
-		ResolveAuth: func(context.Context, platformauth.Request) (platformauth.Result, error) {
+		ResolveAuth: func(context.Context) (platformauth.Result, error) {
 			t.Fatal("official authentication must not run for an equal online version")
 			return platformauth.Result{}, nil
 		},
@@ -221,7 +222,7 @@ func TestFlowSkipsOfficialPublishWhenOnlineVersionIsNewer(t *testing.T) {
 			}
 			return storelookup.Result{OnlineVersion: "7.8.138"}, nil
 		},
-		ResolveAuth: func(context.Context, platformauth.Request) (platformauth.Result, error) {
+		ResolveAuth: func(context.Context) (platformauth.Result, error) {
 			t.Fatal("official authentication must not run for a newer online version")
 			return platformauth.Result{}, nil
 		},
@@ -353,7 +354,7 @@ func TestFlowStoreLookupOutcomes(t *testing.T) {
 				LookupVersion: func(context.Context, storelookup.Request) (storelookup.Result, error) {
 					return storelookup.Result{OnlineVersion: test.lookupVersion}, test.lookupErr
 				},
-				ResolveAuth: func(context.Context, platformauth.Request) (platformauth.Result, error) {
+				ResolveAuth: func(context.Context) (platformauth.Result, error) {
 					return platformauth.Result{Provider: auth.StaticToken("secret")}, nil
 				},
 				PublishOfficial: func(_ context.Context, request official.Request) (official.Result, error) {

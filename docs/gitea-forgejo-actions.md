@@ -54,7 +54,7 @@ jobs:
 
       - name: Build LPK
         id: lazycat
-        uses: https://github.com/ca-x/lazycat-github-action@v1
+        uses: https://github.com/wcaqrl/lazycat-github-action@v1
         with:
           operation: build
           config: .github/lazycat-action.yml
@@ -96,7 +96,7 @@ jobs:
 
       - name: Build LPK
         id: lazycat
-        uses: https://github.com/ca-x/lazycat-github-action@v1
+        uses: https://github.com/wcaqrl/lazycat-github-action@v1
         with:
           operation: build
           config: .github/lazycat-action.yml
@@ -136,7 +136,7 @@ jobs:
 
       - name: Check image versions
         id: lazycat
-        uses: https://github.com/ca-x/lazycat-github-action@v1
+        uses: https://github.com/wcaqrl/lazycat-github-action@v1
         with:
           operation: check
           config: .github/lazycat-action.yml
@@ -171,7 +171,7 @@ Build the LPK first, then pass the verified path and SHA256 to a second Action s
 ```yaml
 - name: Build LPK
   id: lazycat-build
-  uses: https://github.com/ca-x/lazycat-github-action@v1
+  uses: https://github.com/wcaqrl/lazycat-github-action@v1
   with:
     operation: build
     config: .github/lazycat-action.yml
@@ -179,9 +179,10 @@ Build the LPK first, then pass the verified path and SHA256 to a second Action s
 
 - name: Publish to the LazyCat official platform
   id: lazycat-publish
-  uses: https://github.com/ca-x/lazycat-github-action@v1
+  uses: https://github.com/wcaqrl/lazycat-github-action@v1
   env:
-    LAZYCAT_TOKEN: ${{ secrets.LAZYCAT_TOKEN }}
+    LZC_API_HOST: ${{ secrets.LZC_API_HOST }}
+    LZC_API_TOKEN: ${{ secrets.LZC_API_TOKEN }}
   with:
     operation: publish-official
     config: .github/lazycat-action.yml
@@ -191,7 +192,7 @@ Build the LPK first, then pass the verified path and SHA256 to a second Action s
     sha256: ${{ steps.lazycat-build.outputs.sha256 }}
 ```
 
-You can use `LZC_CLI_TOKEN`, `LAZYCAT_USERNAME` and `LAZYCAT_PASSWORD`, or `token-file` instead of `LAZYCAT_TOKEN` as documented in the main README. Store every credential in the platform's secret manager.
+`LZC_API_HOST` and `LZC_API_TOKEN` are the only LazyCat developer-platform credentials. Store both in the platform's secret manager.
 
 ## Bootstrap downloads and private networks
 

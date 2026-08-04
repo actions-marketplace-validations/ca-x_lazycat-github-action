@@ -14,6 +14,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/ca-x/lazycat-github-action/internal/config"
 	"github.com/ca-x/lazycat-github-action/internal/lpkcheck"
+	"github.com/ca-x/lazycat-github-action/internal/platformapi"
 	"github.com/ca-x/lazycat-github-action/internal/platformauth"
 	"github.com/ca-x/lazycat-github-action/internal/project"
 	"github.com/ca-x/lazycat-github-action/internal/store/official"
@@ -49,7 +50,6 @@ type Request struct {
 	Changelog      string
 	DownloadURL    string
 	ExpectedSHA256 string
-	TokenFile      string
 	DryRun         bool
 }
 
@@ -66,7 +66,7 @@ type PrivatePublisher interface {
 type Flow struct {
 	Verify           func(context.Context, lpkcheck.Request) (lpkcheck.Result, error)
 	PrecheckOfficial func(context.Context, string) error
-	ResolveAuth      func(context.Context, platformauth.Request) (platformauth.Result, error)
+	ResolveAuth      func(context.Context) (platformauth.Result, error)
 	PublishOfficial  func(context.Context, official.Request) (official.Result, error)
 	LookupVersion    storelookup.Lookup
 	LookupEnv        func(string) (string, bool)
@@ -76,7 +76,9 @@ type Flow struct {
 
 func Default() Flow {
 	resolver := platformauth.Resolver{}
-	officialPublisher := official.Publisher{}
+	officialPublisher := official.Publisher{
+		BaseURL: platformapi.BaseURL(), HTTPClient: platformapi.HTTPClient(nil), SDK: true,
+	}
 	return Flow{
 		Verify:           lpkcheck.File,
 		PrecheckOfficial: official.PrecheckFile,
@@ -223,6 +225,13 @@ func (flow Flow) checkExisting(ctx context.Context, request Request, artifact lp
 	if !enabled {
 		return "", "", nil
 	}
+	if request.Target == TargetOfficial {
+		baseURL, err := platformapi.AppStoreCOSBaseURL()
+		if err != nil {
+			return "", "", fmt.Errorf("configure official store metadata: %w", err)
+		}
+		lookupRequest.BaseURL = baseURL
+	}
 	if flow.LookupVersion == nil {
 		return "", "", errors.New("store version lookup dependency is unavailable")
 	}
@@ -269,7 +278,7 @@ func (flow Flow) publishOfficial(ctx context.Context, request Request, result Re
 	if flow.ResolveAuth == nil || flow.PublishOfficial == nil {
 		return Result{}, errors.New("official publisher dependencies are unavailable")
 	}
-	resolved, err := flow.ResolveAuth(ctx, platformauth.Request{TokenFile: request.TokenFile})
+	resolved, err := flow.ResolveAuth(ctx)
 	if err != nil {
 		return Result{}, fmt.Errorf("resolve official credentials: %w", err)
 	}

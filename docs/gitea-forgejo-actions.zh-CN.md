@@ -54,7 +54,7 @@ jobs:
 
       - name: Build LPK
         id: lazycat
-        uses: https://github.com/ca-x/lazycat-github-action@v1
+        uses: https://github.com/wcaqrl/lazycat-github-action@v1
         with:
           operation: build
           config: .github/lazycat-action.yml
@@ -96,7 +96,7 @@ jobs:
 
       - name: Build LPK
         id: lazycat
-        uses: https://github.com/ca-x/lazycat-github-action@v1
+        uses: https://github.com/wcaqrl/lazycat-github-action@v1
         with:
           operation: build
           config: .github/lazycat-action.yml
@@ -136,7 +136,7 @@ jobs:
 
       - name: Check image versions
         id: lazycat
-        uses: https://github.com/ca-x/lazycat-github-action@v1
+        uses: https://github.com/wcaqrl/lazycat-github-action@v1
         with:
           operation: check
           config: .github/lazycat-action.yml
@@ -171,7 +171,7 @@ stores:
 ```yaml
 - name: Build LPK
   id: lazycat-build
-  uses: https://github.com/ca-x/lazycat-github-action@v1
+  uses: https://github.com/wcaqrl/lazycat-github-action@v1
   with:
     operation: build
     config: .github/lazycat-action.yml
@@ -179,9 +179,10 @@ stores:
 
 - name: Publish to the LazyCat official platform
   id: lazycat-publish
-  uses: https://github.com/ca-x/lazycat-github-action@v1
+  uses: https://github.com/wcaqrl/lazycat-github-action@v1
   env:
-    LAZYCAT_TOKEN: ${{ secrets.LAZYCAT_TOKEN }}
+    LZC_API_HOST: ${{ secrets.LZC_API_HOST }}
+    LZC_API_TOKEN: ${{ secrets.LZC_API_TOKEN }}
   with:
     operation: publish-official
     config: .github/lazycat-action.yml
@@ -191,7 +192,7 @@ stores:
     sha256: ${{ steps.lazycat-build.outputs.sha256 }}
 ```
 
-除了 `LAZYCAT_TOKEN`，也可以按照主 README 的认证说明使用 `LZC_CLI_TOKEN`、`LAZYCAT_USERNAME` 和 `LAZYCAT_PASSWORD`，或者传入 `token-file`。所有凭据都应保存在平台的 Secret 管理功能中。
+懒猫开发者平台只使用 `LZC_API_HOST` 和 `LZC_API_TOKEN`。两者都应保存在平台的 Secret 管理功能中。
 
 ## 启动文件下载和内网环境
 

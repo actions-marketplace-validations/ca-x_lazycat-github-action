@@ -157,7 +157,7 @@ func TestRunPublishesOfficialStoreAndReturnsStableJSON(t *testing.T) {
 			return actionbuild.Result{}, nil
 		},
 		Publish: func(_ context.Context, request publishflow.Request) (publishflow.Result, error) {
-			if request.Target != publishflow.TargetOfficial || request.TokenFile != "/run/secrets/lazycat.json" || request.LPKPath != filepath.Join(root, "dist", "app.lpk") {
+			if request.Target != publishflow.TargetOfficial || request.LPKPath != filepath.Join(root, "dist", "app.lpk") {
 				t.Fatalf("request=%#v", request)
 			}
 			return publishflow.Result{
@@ -168,7 +168,7 @@ func TestRunPublishesOfficialStoreAndReturnsStableJSON(t *testing.T) {
 	}
 	result, err := action.Run(context.Background(), action.Input{
 		Operation: action.OperationPublishOfficial, Version: "1.2.3", LPKPath: filepath.Join(root, "dist", "app.lpk"),
-		Changelog: "Release notes", TokenFile: "/run/secrets/lazycat.json",
+		Changelog: "Release notes",
 	}, deps)
 	if err != nil {
 		t.Fatal(err)
@@ -198,7 +198,7 @@ func TestRunMapsStoreAuthenticationFailure(t *testing.T) {
 	}
 	_, err := action.Run(context.Background(), action.Input{Operation: action.OperationPublishOfficial, Version: "1.2.3", LPKPath: "dist/app.lpk"}, deps)
 	var actionErr *action.Error
-	if !errors.As(err, &actionErr) || actionErr.Code != action.CodeStoreAuthFailed || actionErr.Retryable {
+	if !errors.As(err, &actionErr) || actionErr.Code != action.CodeStoreAuthFailed {
 		t.Fatalf("err=%#v", err)
 	}
 }

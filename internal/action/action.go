@@ -19,6 +19,7 @@ import (
 	"github.com/ca-x/lazycat-github-action/internal/diagnostic"
 	"github.com/ca-x/lazycat-github-action/internal/imageflow"
 	"github.com/ca-x/lazycat-github-action/internal/platform"
+	"github.com/ca-x/lazycat-github-action/internal/platformapi"
 	"github.com/ca-x/lazycat-github-action/internal/platformauth"
 	"github.com/ca-x/lazycat-github-action/internal/project"
 	"github.com/ca-x/lazycat-github-action/internal/publishflow"
@@ -63,7 +64,6 @@ type Input struct {
 	LPKPath               string
 	DownloadURL           string
 	ExpectedSHA256        string
-	TokenFile             string
 	EventName             string
 	RefType               string
 	RefName               string
@@ -99,10 +99,9 @@ type Result struct {
 }
 
 type Error struct {
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	Retryable bool   `json:"retryable"`
-	Cause     error  `json:"-"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Cause   error  `json:"-"`
 }
 
 func (err *Error) Error() string {
@@ -172,8 +171,10 @@ func DefaultDependencies(host platform.Host) Dependencies {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	builder := actionbuild.Builder{Logger: logger}
 	registryClient := registry.New()
-	token := platformauth.NewProvider(platformauth.Resolver{}, func() string { return os.Getenv("INPUT_TOKEN_FILE") })
-	storeClient := appstore.New(appstore.Options{Token: token})
+	token := platformauth.NewProvider(platformauth.Resolver{})
+	storeClient := appstore.New(appstore.Options{
+		BaseURL: platformapi.BaseURL(), HTTPClient: platformapi.HTTPClient(nil), Token: token,
+	})
 	imageFlow := imageflow.Flow{
 		Registry:  registryClient,
 		Deliverer: delivery.Resolver{Copier: storeClient, Inspector: registryClient},
@@ -302,7 +303,7 @@ func runPublish(ctx context.Context, input Input, operation Operation, cfg confi
 	published, err := dependencies.Publish(ctx, publishflow.Request{
 		Target: target, Config: cfg, Project: info, LPKPath: input.LPKPath, Version: input.Version,
 		Changelog: input.Changelog, DownloadURL: input.DownloadURL, ExpectedSHA256: input.ExpectedSHA256,
-		TokenFile: input.TokenFile, DryRun: input.DryRun,
+		DryRun: input.DryRun,
 	})
 	if err != nil {
 		return Result{}, mapPublishError(err)
@@ -487,22 +488,17 @@ func mapImageError(err error, target platform.Target) *Error {
 }
 
 func mapPublishError(err error) *Error {
-	retryable := false
-	var toolkitError *lpkgo.Error
-	if errors.As(err, &toolkitError) {
-		retryable = toolkitError.Retryable
-	}
 	switch {
 	case errors.Is(err, publishflow.ErrReleaseAssetMissing):
-		return actionErrorRetryable(CodeReleaseAssetMissing, "private publishing requires a confirmed GitHub Release Asset URL and SHA256", err, false)
+		return actionError(CodeReleaseAssetMissing, "private publishing requires a confirmed GitHub Release Asset URL and SHA256", err)
 	case errors.Is(err, publishflow.ErrPublishStrategyRequired), errors.Is(err, publishflow.ErrStoreDisabled), errors.Is(err, lpkgo.ErrInvalidArgument), errors.Is(err, lpkgo.ErrInvalidConfig):
-		return actionErrorRetryable(CodeConfigInvalid, "store publishing configuration is invalid", err, false)
+		return actionError(CodeConfigInvalid, "store publishing configuration is invalid", err)
 	case errors.Is(err, lpkgo.ErrUnauthenticated), errors.Is(err, lpkgo.ErrPermissionDenied):
-		return actionErrorRetryable(CodeStoreAuthFailed, "store authentication failed", err, retryable)
+		return actionError(CodeStoreAuthFailed, "store authentication failed", err)
 	case errors.Is(err, lpkgo.ErrInvalidManifest), errors.Is(err, lpkgo.ErrUnsupportedFormat), errors.Is(err, lpkgo.ErrIntegrityMismatch):
-		return actionErrorRetryable(CodeLPKInvalid, "LPK validation failed before store publishing", err, false)
+		return actionError(CodeLPKInvalid, "LPK validation failed before store publishing", err)
 	default:
-		return actionErrorRetryable(CodeStorePublishFailed, "store publishing failed", err, retryable)
+		return actionError(CodeStorePublishFailed, "store publishing failed", err)
 	}
 }
 
@@ -618,8 +614,4 @@ func writeResult(result *Result, directory string) (resultErr error) {
 
 func actionError(code, message string, cause error) *Error {
 	return &Error{Code: code, Message: message, Cause: cause}
-}
-
-func actionErrorRetryable(code, message string, cause error, retryable bool) *Error {
-	return &Error{Code: code, Message: message, Cause: cause, Retryable: retryable}
 }
