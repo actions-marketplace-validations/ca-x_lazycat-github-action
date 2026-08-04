@@ -412,7 +412,7 @@ Commit on `codex/add-lazycat-action`, push the branch, and create a PR to `lazyc
 
 - [ ] **Step 5: Report configuration**
 
-Report required `LZC_API_HOST`, `LZC_API_TOKEN`, `APPSTORE_URL`, and `APPSTORE_TOKEN`. State that `APP_ID` is unnecessary because exact `packageId` lookup is used, Docker sources are public, and `PRIVATE_STORE_GROUP_CODES` is needed only when the private application is group-restricted. Explain Secret precedence: Environment overrides Repository, Repository overrides Organization, and an Organization Secret must authorize this repository.
+Report required `LZC_API_TOKEN`, `APPSTORE_URL`, and `APPSTORE_TOKEN`, plus optional `LZC_API_HOST` override. State that `APP_ID` is unnecessary because exact `packageId` lookup is used, Docker sources are public, and `PRIVATE_STORE_GROUP_CODES` is needed only when the private application is group-restricted. Explain Secret precedence: Environment overrides Repository, Repository overrides Organization, and an Organization Secret must authorize this repository.
 
 ## Verification Record
 

@@ -52,8 +52,8 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 	}
 	for _, required := range []string{
 		"Both repository entry points are supported",
-		"wcaqrl/lazycat-github-action@v1",
-		"wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1",
+		"ca-x/lazycat-github-action@v1",
+		"ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1",
 		"caller owns checkout, permissions, toolchains, Release handling",
 		"complete automation path",
 	} {
@@ -198,8 +198,8 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 		}
 		text := string(data)
 		for _, required := range []string{
-			"wcaqrl/lazycat-github-action@v1",
-			"wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1",
+			"ca-x/lazycat-github-action@v1",
+			"ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1",
 			"Composite Action",
 			"Reusable Workflow",
 			"Node.js 24",

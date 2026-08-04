@@ -8,7 +8,7 @@ permissions:
   pull-requests: write
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       operation: auto
       config: .github/lazycat-action.yml

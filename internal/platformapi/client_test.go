@@ -9,20 +9,54 @@ import (
 	"github.com/ca-x/lazycat-github-action/internal/platformapi"
 )
 
-func TestBaseURLReadsLZCAPIHost(t *testing.T) {
-	t.Setenv("LZC_API_HOST", "appstore-api.staging.lazycat.cloud")
-	if got := platformapi.BaseURL(); got != "https://appstore-api.staging.lazycat.cloud" {
+func TestBaseURLUsesProductionDefault(t *testing.T) {
+	t.Setenv("LZC_API_HOST", "")
+	if got := platformapi.BaseURL(); got != "https://appstore.api.lazycat.cloud" {
 		t.Fatalf("base URL=%q", got)
 	}
 }
 
-func TestAppStoreCOSBaseURLReadsEnvironment(t *testing.T) {
-	t.Setenv("LZC_APPSTORE_COS_DOMAIN", "lzc-app-staging-1301583638.cos.ap-guangzhou.myqcloud.com")
+func TestBaseURLReadsLZCAPIHost(t *testing.T) {
+	t.Setenv("LZC_API_HOST", "api.example.invalid")
+	if got := platformapi.BaseURL(); got != "https://api.example.invalid" {
+		t.Fatalf("base URL=%q", got)
+	}
+}
+
+func TestHostRejectsUnsafeOverrides(t *testing.T) {
+	for _, value := range []string{
+		"https://api.example.com",
+		"api.example.com/sdk",
+		"api.example.com?token=secret",
+		"api example.com",
+	} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("LZC_API_HOST", value)
+			if _, err := platformapi.Host(); err == nil {
+				t.Fatal("expected unsafe API host to fail")
+			}
+		})
+	}
+}
+
+func TestAppStoreCOSBaseURLUsesProductionDefault(t *testing.T) {
+	t.Setenv("LZC_APPSTORE_COS_DOMAIN", "")
 	got, err := platformapi.AppStoreCOSBaseURL()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "https://lzc-app-staging-1301583638.cos.ap-guangzhou.myqcloud.com/appstore/metarepo" {
+	if got != "https://dl.lazycat.cloud/appstore/metarepo" {
+		t.Fatalf("COS URL=%q", got)
+	}
+}
+
+func TestAppStoreCOSBaseURLReadsEnvironment(t *testing.T) {
+	t.Setenv("LZC_APPSTORE_COS_DOMAIN", "cos.example.invalid")
+	got, err := platformapi.AppStoreCOSBaseURL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "https://cos.example.invalid/appstore/metarepo" {
 		t.Fatalf("COS URL=%q", got)
 	}
 }

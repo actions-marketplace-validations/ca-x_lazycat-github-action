@@ -5,7 +5,7 @@ description: Use when setting up, generating, reviewing, or debugging LazyCat Gi
 
 # LazyCat GitHub Action
 
-Use it to automatically inspect the repository, then create or update `wcaqrl/lazycat-github-action@v1` configuration and workflows from the application's real package, build, and Manifest files. Keep image targets, build tools, publication policy, and `project.target_arch` explicit.
+Use it to automatically inspect the repository, then create or update `ca-x/lazycat-github-action@v1` configuration and workflows from the application's real package, build, and Manifest files. Keep image targets, build tools, publication policy, and `project.target_arch` explicit.
 
 ## Choose the supported GitHub interface
 
@@ -13,8 +13,8 @@ Both repository entry points are supported and use the floating `v1` release tag
 
 | Entry point | Reference | Responsibility |
 |---|---|---|
-| Composite Action | `wcaqrl/lazycat-github-action@v1` | Runs one `check`, `build`, or `publish` operation inside a caller-owned job. The caller owns checkout, permissions, toolchains, Release handling, and any other GitHub mutation. |
-| Reusable Workflow | `wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1` | Owns the complete automation path: toolchains, pull requests, Artifacts, tags, Releases, versioned assets, store reconciliation, and private/official publication. |
+| Composite Action | `ca-x/lazycat-github-action@v1` | Runs one `check`, `build`, or `publish` operation inside a caller-owned job. The caller owns checkout, permissions, toolchains, Release handling, and any other GitHub mutation. |
+| Reusable Workflow | `ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1` | Owns the complete automation path: toolchains, pull requests, Artifacts, tags, Releases, versioned assets, store reconciliation, and private/official publication. |
 
 Default to the reusable workflow for generated project automation. Use the composite Action only when the existing workflow already provides the surrounding lifecycle. Do not describe one entry point as replacing or disabling the other.
 
@@ -184,7 +184,7 @@ Official publishing requires:
 - optional retry policy, defaulting to `retry.enabled: false`; when enabled, `max_attempts` includes the first attempt and `initial_delay`/`max_delay` use Go duration syntax;
 - only `lazycat` image delivery;
 - official lint compliance, including locales and icon size at most 200 KB;
-- `LZC_API_HOST` and `LZC_API_TOKEN`.
+- required `LZC_API_TOKEN`, with optional `LZC_API_HOST` override of the production default.
 
 Automatic first information submission is optional and is enabled only when `stores.official.create_if_missing: true` plus at least one of `brief`, `description`, `keywords`, `support_pc: true`, `support_mobile: true`, `screenshot_pc_files`, or `screenshot_mobile_files` is configured. `language`, `name`, `source`, and `source_author` alone retain the legacy create-only behavior. Both support flags default to false. Use the authenticated developer API for exact first-submission state; never infer it from the anonymous public catalog. The supported states are missing application, incomplete information, approved information, and pending review. Approved information is preserved without re-uploading screenshots. A pending review must fail closed before LPK or screenshot upload.
 

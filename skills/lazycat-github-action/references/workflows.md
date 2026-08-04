@@ -13,7 +13,7 @@ permissions:
   pull-requests: write
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       operation: auto
       config: .github/lazycat-action.yml
@@ -40,7 +40,7 @@ permissions:
   pull-requests: write
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       operation: auto
       config: .github/lazycat-action.yml
@@ -78,7 +78,7 @@ permissions:
   pull-requests: write
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       operation: auto
       config: .github/lazycat-action.yml
@@ -103,7 +103,7 @@ APP_ID
 PRIVATE_STORE_GROUP_CODES
 ```
 
-Configure `LZC_API_HOST` and `LZC_API_TOKEN` whenever LazyCat image delivery or official publishing is enabled. `APP_ID` is optional. `PRIVATE_STORE_GROUP_CODES` is an optional comma-separated GitHub Secret; never expose it as a normal workflow input.
+Configure `LZC_API_TOKEN` whenever LazyCat image delivery or official publishing is enabled. `LZC_API_HOST` is an optional override of the production default. `APP_ID` is optional. `PRIVATE_STORE_GROUP_CODES` is an optional comma-separated GitHub Secret; never expose it as a normal workflow input.
 
 Publishing callers must assign required Secrets explicitly. `secrets: inherit` alone is not sufficient documentation and can hide that an Organization Secret has not authorized a newly added repository.
 
@@ -161,7 +161,7 @@ The caller also owns checkout and project toolchains. Use the Node.js 24-compati
 Replace legacy v4 checkout/setup-node steps when updating an existing caller-owned workflow.
 
 ```yaml
-- uses: wcaqrl/lazycat-github-action@v1
+- uses: ca-x/lazycat-github-action@v1
   id: publish-private
   env:
     APPSTORE_URL: ${{ secrets.APPSTORE_URL }}

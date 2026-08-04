@@ -12,7 +12,7 @@ import (
 )
 
 func TestResolverUsesOnlyLZCAPIToken(t *testing.T) {
-	t.Setenv("LZC_API_HOST", "appstore-api.staging.lazycat.cloud")
+	t.Setenv("LZC_API_HOST", "")
 	values := map[string]string{"LZC_API_TOKEN": " pat-token "}
 	result, err := (platformauth.Resolver{LookupEnv: func(name string) (string, bool) {
 		value, found := values[name]
@@ -28,7 +28,7 @@ func TestResolverUsesOnlyLZCAPIToken(t *testing.T) {
 }
 
 func TestResolverRequiresLZCAPIToken(t *testing.T) {
-	t.Setenv("LZC_API_HOST", "appstore-api.staging.lazycat.cloud")
+	t.Setenv("LZC_API_HOST", "")
 	_, err := (platformauth.Resolver{LookupEnv: func(string) (string, bool) {
 		return "", false
 	}}).Resolve(context.Background())
@@ -38,7 +38,7 @@ func TestResolverRequiresLZCAPIToken(t *testing.T) {
 }
 
 func TestProviderCachesLZCAPIToken(t *testing.T) {
-	t.Setenv("LZC_API_HOST", "appstore-api.staging.lazycat.cloud")
+	t.Setenv("LZC_API_HOST", "")
 	var lookups atomic.Int64
 	provider := platformauth.NewProvider(platformauth.Resolver{
 		LookupEnv: func(name string) (string, bool) {

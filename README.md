@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md)
 
-`wcaqrl/lazycat-github-action` checks Docker image versions, updates explicit LazyCat Manifest targets, builds LPK files, creates update pull requests, and attaches validated LPK files to GitHub Releases.
+`ca-x/lazycat-github-action` checks Docker image versions, updates explicit LazyCat Manifest targets, builds LPK files, creates update pull requests, and attaches validated LPK files to GitHub Releases.
 
 The Action uses [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.3.5`. Its compatibility baseline is `@lazycatcloud/lzc-cli` `2.0.9`.
 
@@ -18,8 +18,8 @@ Both public entry points are supported and follow the floating `v1` release tag:
 
 | Entry point | Reference | Use it when |
 |---|---|---|
-| Composite Action | `wcaqrl/lazycat-github-action@v1` | Your job already owns checkout, permissions, toolchain setup, and GitHub mutations. |
-| Reusable Workflow | `wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1` | You want the complete LazyCat CI/CD path, including toolchains, pull requests, Artifacts, tags, Releases, assets, and store publication. |
+| Composite Action | `ca-x/lazycat-github-action@v1` | Your job already owns checkout, permissions, toolchain setup, and GitHub mutations. |
+| Reusable Workflow | `ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1` | You want the complete LazyCat CI/CD path, including toolchains, pull requests, Artifacts, tags, Releases, assets, and store publication. |
 
 Current official checkout and Node setup Actions use the Node.js 24 runtime. Self-hosted GitHub Actions Runners must be `v2.327.1` or newer. Caller-owned composite jobs should use `actions/checkout@v7` and `actions/setup-node@v7`; the reusable workflow also uses the current supported major lines for setup-go, github-script, Docker setup/login, pull-request creation, and build provenance.
 
@@ -28,7 +28,7 @@ Use the reusable workflow for normal CI/CD:
 ```yaml
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       config: .github/lazycat-action.yml
     secrets: inherit
@@ -37,7 +37,7 @@ jobs:
 Use the composite Action directly inside an existing job:
 
 ```yaml
-- uses: wcaqrl/lazycat-github-action@v1
+- uses: ca-x/lazycat-github-action@v1
   id: lazycat
   with:
     operation: build
@@ -97,7 +97,7 @@ The reusable workflow accepts a Linux Runner label:
 ```yaml
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       runner: self-hosted-linux-arm64
       config: .github/lazycat-action.yml
@@ -191,7 +191,7 @@ stores:
 
 `allow_downgrade` defaults to `false`. After the version-source image tag is mapped to SemVer, the Action blocks a version lower than the current `package.yml.version` before image copying or file edits. Equal versions remain eligible for image-reference or digest refresh. Set it to `true` only for an intentional rollback.
 
-Store the developer-platform host and PAT as the `LZC_API_HOST` and `LZC_API_TOKEN` GitHub secrets.
+Production defaults to `appstore.api.lazycat.cloud`; store only the PAT as the `LZC_API_TOKEN` GitHub secret. Set `LZC_API_HOST` only to override the default host.
 
 Then add a scheduled and manual caller workflow:
 
@@ -209,7 +209,7 @@ permissions:
 
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       operation: auto
       config: .github/lazycat-action.yml
@@ -339,7 +339,7 @@ delivery:
 
 The Action sends the selected source reference to the LazyCat developer platform with `Platform` equal to `project.target_arch` (`amd64` by default, optionally `arm64`). The platform performs a remote Registry-to-Registry copy and returns the final `registry.lazycat.cloud/...` reference. Local Docker is not used for this copy.
 
-This mode requires `LZC_API_HOST` and `LZC_API_TOKEN`. It is the only delivery mode accepted when `stores.official.enabled` is true.
+This mode requires `LZC_API_TOKEN`. `LZC_API_HOST` defaults to `appstore.api.lazycat.cloud` and may be overridden. It is the only delivery mode accepted when `stores.official.enabled` is true.
 
 ### Explicit mirror
 
@@ -394,19 +394,22 @@ The reusable workflow runs `docker/login-action`, which writes Docker credential
 
 ## Authentication
 
-LazyCat image copy and official LPK publishing read only these environment variables:
+LazyCat image copy and official LPK publishing require a PAT:
 
 ```text
-LZC_API_HOST=appstore-api.staging.lazycat.cloud
-LZC_APPSTORE_COS_DOMAIN=lzc-app-staging-1301583638.cos.ap-guangzhou.myqcloud.com
 LZC_API_TOKEN=your-personal-access-token
 ```
 
-`LZC_API_HOST` must contain only a host name, without a scheme or path. The Action uses HTTPS, sends developer-platform requests under `/sdk/v3/developer`, and authenticates only with `X-API-Token`. It does not send `X-User-Token` or a `userToken` Cookie.
+The production defaults are:
 
-`LZC_APPSTORE_COS_DOMAIN` is the optional domain used by `skip_if_version_exists` for anonymous official-store metadata lookups. Leave it unset to use the production catalog. The PAT is never sent to this domain.
+```text
+LZC_API_HOST=appstore.api.lazycat.cloud
+LZC_APPSTORE_COS_DOMAIN=dl.lazycat.cloud
+```
 
-The reusable workflow accepts the LZC_API_HOST and LZC_API_TOKEN GitHub Secrets. Direct composite or local callers may additionally set LZC_APPSTORE_COS_DOMAIN. Never put the PAT in repository configuration, normal workflow inputs, or logs. Project build scripts do not receive any of these variables.
+Either domain can be overridden by its environment variable. Override values must contain only a host name, without a scheme or path. The Action uses HTTPS, sends developer-platform requests under `/sdk/v3/developer`, and authenticates only with `X-API-Token`. It does not send `X-User-Token` or a `userToken` Cookie. `LZC_APPSTORE_COS_DOMAIN` is used only for anonymous `skip_if_version_exists` lookups, and the PAT is never sent to that domain.
+
+The reusable workflow requires the `LZC_API_TOKEN` GitHub Secret; `LZC_API_HOST` is an optional override. Direct composite or local callers may additionally override `LZC_APPSTORE_COS_DOMAIN`. Never put the PAT in repository configuration, normal workflow inputs, or logs. Project build scripts do not receive any of these variables.
 
 ## Pull request and Release workflows
 
@@ -427,7 +430,7 @@ permissions:
 
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       operation: auto
       config: .github/lazycat-action.yml
@@ -580,7 +583,7 @@ permissions:
 
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       operation: auto
       config: .github/lazycat-action.yml
@@ -603,7 +606,7 @@ permissions:
 
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       operation: auto
       config: .github/lazycat-action.yml

@@ -12,12 +12,16 @@ import (
 	"time"
 )
 
-const missingHostBaseURL = "https://missing-lzc-api-host.invalid"
+const (
+	defaultAPIHost        = "appstore.api.lazycat.cloud"
+	defaultCOSDomain      = "dl.lazycat.cloud"
+	invalidAPIHostBaseURL = "https://invalid-lzc-api-host.invalid"
+)
 
 func Host() (string, error) {
 	host := strings.TrimSpace(os.Getenv("LZC_API_HOST"))
 	if host == "" {
-		return "", errors.New("LZC_API_HOST is required")
+		host = defaultAPIHost
 	}
 	if strings.Contains(host, "://") || strings.ContainsAny(host, "/?#") || strings.ContainsAny(host, " \t\r\n") {
 		return "", errors.New("LZC_API_HOST must contain only a host name")
@@ -28,7 +32,7 @@ func Host() (string, error) {
 func BaseURL() string {
 	host, err := Host()
 	if err != nil {
-		return missingHostBaseURL
+		return invalidAPIHostBaseURL
 	}
 	return "https://" + host
 }
@@ -36,7 +40,7 @@ func BaseURL() string {
 func AppStoreCOSBaseURL() (string, error) {
 	domain := strings.TrimSpace(os.Getenv("LZC_APPSTORE_COS_DOMAIN"))
 	if domain == "" {
-		return "", nil
+		domain = defaultCOSDomain
 	}
 	if strings.Contains(domain, "://") || strings.ContainsAny(domain, ":/?#") || strings.ContainsAny(domain, " \t\r\n") {
 		return "", errors.New("LZC_APPSTORE_COS_DOMAIN must contain only a domain name")

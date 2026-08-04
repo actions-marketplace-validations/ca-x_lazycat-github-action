@@ -23,7 +23,7 @@ import (
 
 func TestBuilderBuildsVerifiesAndHashesLPKForLinuxAMD64(t *testing.T) {
 	for key, value := range map[string]string{
-		"LZC_API_HOST":              "appstore-api.staging.lazycat.cloud",
+		"LZC_API_HOST":              "api.example.invalid",
 		"LZC_APPSTORE_COS_DOMAIN":   "cos.example.com",
 		"LZC_API_TOKEN":             "pat-secret",
 		"APPSTORE_TOKEN":            "store-secret",

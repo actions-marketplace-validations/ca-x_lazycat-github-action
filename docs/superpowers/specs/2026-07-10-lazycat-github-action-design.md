@@ -528,7 +528,7 @@ Release Asset 使用其他成熟 GitHub Action 上传；核心 Go Action 只负�
 
 官方发布复用 `lzc-toolkit-go/appstore`：镜像复制调用 `CopyImage`，LPK 提交调用 `Publish`，从而保持与 lzc-cli 2.0.8 的实际协议一致。
 
-认证只使用 `LZC_API_HOST` 和 `LZC_API_TOKEN`。开发者平台请求通过 `X-API-Token` 发送 PAT，不执行账号密码登录，也不读取本地 token 文件。GitHub-hosted Runner 和本地调用都必须显式提供这两个环境变量，且不得在日志中输出 PAT。
+认证只使用 `LZC_API_TOKEN`。`LZC_API_HOST` 默认使用 `appstore.api.lazycat.cloud`，可由外部环境变量覆盖。开发者平台请求通过 `X-API-Token` 发送 PAT，不执行账号密码登录，也不读取本地 token 文件；GitHub-hosted Runner 和本地调用都不得在日志中输出 PAT。
 
 ### 12.2 喵喵私有商店
 

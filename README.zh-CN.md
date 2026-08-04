@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-`wcaqrl/lazycat-github-action` 用于检查 Docker 镜像版本、精确更新 LazyCat Manifest、构建 LPK、创建更新 Pull Request，并把校验后的 LPK 上传到 GitHub Release。
+`ca-x/lazycat-github-action` 用于检查 Docker 镜像版本、精确更新 LazyCat Manifest、构建 LPK、创建更新 Pull Request，并把校验后的 LPK 上传到 GitHub Release。
 
 Action 使用 [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.3.5`，兼容基线是 `@lazycatcloud/lzc-cli` `2.0.9`。
 
@@ -18,8 +18,8 @@ Action 使用 [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-t
 
 | 入口 | 引用方式 | 适用场景 |
 |---|---|---|
-| Composite Action | `wcaqrl/lazycat-github-action@v1` | 现有 job 已经负责 checkout、权限、工具链安装和 GitHub 写操作。 |
-| Reusable Workflow | `wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1` | 需要完整 LazyCat CI/CD，包括工具链、Pull Request、Artifact、tag、Release、Asset 和商店发布。 |
+| Composite Action | `ca-x/lazycat-github-action@v1` | 现有 job 已经负责 checkout、权限、工具链安装和 GitHub 写操作。 |
+| Reusable Workflow | `ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1` | 需要完整 LazyCat CI/CD，包括工具链、Pull Request、Artifact、tag、Release、Asset 和商店发布。 |
 
 当前官方 checkout 和 Node setup Action 使用 Node.js 24 运行时；self-hosted GitHub Actions Runner 必须为 `v2.327.1` 或更高版本。由调用方管理的 composite job 应使用 `actions/checkout@v7` 和 `actions/setup-node@v7`；reusable workflow 内部的 setup-go、github-script、Docker setup/login、Pull Request 创建和构建证明 Action 也使用当前受支持的主版本。
 
@@ -28,7 +28,7 @@ Action 使用 [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-t
 ```yaml
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       config: .github/lazycat-action.yml
     secrets: inherit
@@ -37,7 +37,7 @@ jobs:
 也可以在现有 job 中直接调用 composite Action：
 
 ```yaml
-- uses: wcaqrl/lazycat-github-action@v1
+- uses: ca-x/lazycat-github-action@v1
   id: lazycat
   with:
     operation: build
@@ -97,7 +97,7 @@ reusable workflow 支持传入 Linux Runner 标签：
 ```yaml
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       runner: self-hosted-linux-arm64
       config: .github/lazycat-action.yml
@@ -191,7 +191,7 @@ stores:
 
 `allow_downgrade` 默认为 `false`。版本来源镜像完成标签到 SemVer 的映射后，如果候选版本低于当前 `package.yml.version`，Action 会在复制镜像和修改文件前阻止降级。版本相同仍可刷新镜像引用或 digest。只有明确执行回退时才设置为 `true`。
 
-把 staging 开发者平台域名和 PAT 分别保存为 GitHub Secrets `LZC_API_HOST` 和 `LZC_API_TOKEN`。
+生产环境默认使用 `appstore.api.lazycat.cloud`，只需把 PAT 保存为 GitHub Secret `LZC_API_TOKEN`。需要切换环境时，可用 `LZC_API_HOST` 覆盖默认域名。
 
 再添加定时和手动触发 workflow：
 
@@ -209,7 +209,7 @@ permissions:
 
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       operation: auto
       config: .github/lazycat-action.yml
@@ -339,7 +339,7 @@ delivery:
 
 Action 把选中的源镜像提交给懒猫开发者平台，并把 `Platform` 设置为 `project.target_arch`（默认 `amd64`，可选 `arm64`）。开发者平台执行远端 Registry-to-Registry 复制，返回最终的 `registry.lazycat.cloud/...` 地址。本地 Docker 不参与这次复制。
 
-该模式需要 `LZC_API_HOST` 和 `LZC_API_TOKEN`。启用官方商店模式时只能使用这种交付方式。
+该模式需要 `LZC_API_TOKEN`。`LZC_API_HOST` 默认使用 `appstore.api.lazycat.cloud`，可通过环境变量覆盖。启用官方商店模式时只能使用这种交付方式。
 
 ### 显式镜像加速地址
 
@@ -394,18 +394,18 @@ reusable workflow 使用 `docker/login-action` 写入 Docker 凭据，OCI 客户
 
 ## 认证
 
-LazyCat 镜像复制和官方 LPK 提交只读取以下环境变量：
+LazyCat 镜像复制和官方 LPK 提交必须提供 PAT：
 
-    export LZC_API_HOST='appstore-api.staging.lazycat.cloud'
-    # 测试环境 COS 静态文件访问域名
-    export LZC_APPSTORE_COS_DOMAIN='lzc-app-staging-1301583638.cos.ap-guangzhou.myqcloud.com'
     export LZC_API_TOKEN='your-personal-access-token'
 
-LZC_API_HOST 只填写域名，不包含协议和路径。Action 使用 HTTPS，并把开发者平台请求发送到 /sdk/v3/developer。认证只使用 X-API-Token；不会登录，不发送 X-User-Token，也不会发送 userToken Cookie。
+默认生产环境为：
 
-LZC_APPSTORE_COS_DOMAIN 是 `skip_if_version_exists` 匿名查询官方商店元数据时使用的可选 COS 域名。未设置时查询生产目录。PAT 不会发送到该域名。
+    LZC_API_HOST=appstore.api.lazycat.cloud
+    LZC_APPSTORE_COS_DOMAIN=dl.lazycat.cloud
 
-reusable workflow 使用 GitHub Secrets LZC_API_HOST 和 LZC_API_TOKEN。本地或直接调用 composite Action 时，可以另外设置 LZC_APPSTORE_COS_DOMAIN。PAT 不得写入仓库配置、workflow 普通输入或日志。
+两个域名都可以通过同名外部环境变量覆盖。覆盖值只填写域名，不包含协议和路径。Action 使用 HTTPS，并把开发者平台请求发送到 /sdk/v3/developer。认证只使用 X-API-Token；不会登录，不发送 X-User-Token，也不会发送 userToken Cookie。`LZC_APPSTORE_COS_DOMAIN` 只用于 `skip_if_version_exists` 匿名查询，PAT 不会发送到该域名。
+
+reusable workflow 必须使用 GitHub Secret `LZC_API_TOKEN`；`LZC_API_HOST` 是可选的环境覆盖。本地或直接调用 composite Action 时，也可以设置 `LZC_APPSTORE_COS_DOMAIN` 覆盖生产目录。PAT 不得写入仓库配置、workflow 普通输入或日志。
 
 项目构建会执行仓库中的 buildscript。Action 会从 buildscript 环境中移除 LZC_API_HOST、LZC_APPSTORE_COS_DOMAIN、LZC_API_TOKEN、Registry 凭据、GitHub token，以及 GitHub output/control 文件路径。带写权限的发布 workflow 应只用于可信分支、tag、定时任务和手动运行，不要把 Secrets 暴露给不可信 Pull Request 代码。
 
@@ -428,7 +428,7 @@ permissions:
 
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       operation: auto
       config: .github/lazycat-action.yml
@@ -581,7 +581,7 @@ permissions:
 
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       operation: auto
       config: .github/lazycat-action.yml
@@ -604,7 +604,7 @@ permissions:
 
 jobs:
   lazycat:
-    uses: wcaqrl/lazycat-github-action/.github/workflows/lazycat.yml@v1
+    uses: ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1
     with:
       operation: auto
       config: .github/lazycat-action.yml

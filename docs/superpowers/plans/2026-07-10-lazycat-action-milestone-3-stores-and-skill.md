@@ -494,7 +494,7 @@
 
 - [x] **Step 3: Write Chinese and English end-to-end documentation**
 
-  Explain that GitHub-hosted runners require `LZC_API_HOST` and `LZC_API_TOKEN`, that the PAT must be stored as a Secret, and that it must never be logged. Include full YAML for official publishing and both private create-app and add-version paths.
+  Explain that GitHub-hosted runners require `LZC_API_TOKEN`, that `LZC_API_HOST` optionally overrides the production default, and that the PAT must be stored as a Secret, and that it must never be logged. Include full YAML for official publishing and both private create-app and add-version paths.
 
 - [x] **Step 4: Add runnable build examples**
 

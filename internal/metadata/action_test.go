@@ -99,7 +99,7 @@ func TestReusableWorkflowContractAndActionRefs(t *testing.T) {
 		}
 		value := strings.TrimSpace(strings.TrimPrefix(line, "uses: "))
 		value = strings.Fields(value)[0]
-		if value == "wcaqrl/lazycat-github-action@v1" {
+		if value == "ca-x/lazycat-github-action@v1" {
 			continue
 		}
 		parts := strings.Split(value, "@")
