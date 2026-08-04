@@ -35,7 +35,7 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 			t.Fatalf("SKILL.md frontmatter missing trigger %q", required)
 		}
 	}
-	for _, required := range []string{"name: lazycat-github-action", "automatically inspect", "Primary outcome: working GitHub workflows", "Do not stop after printing sample YAML", "Do not infer", "linux/amd64", "project.target_arch", "sort: updated", "Docker Hub", "last_updated", "APPSTORE_TOKEN", "token-file", "skip_if_version_exists", "PRIVATE_STORE_GROUP_CODES", "onlineVersion", "Repository overrides Organization", "delivery source of truth", "{version}.{build}.0", "allow_downgrade: false", "VERSION_DOWNGRADE_BLOCKED", "rank filtered tag names", "first usable", "lazycat-contrib/cat-led", "lazycat-contrib/lazycat-neko-webshell", "failed to spawn protoc", "edition = \"2023\""} {
+	for _, required := range []string{"name: lazycat-github-action", "automatically inspect", "Primary outcome: working GitHub workflows", "Do not stop after printing sample YAML", "Do not infer", "linux/amd64", "project.target_arch", "sort: updated", "Docker Hub", "last_updated", "APPSTORE_TOKEN", "LZC_API_HOST", "LZC_API_TOKEN", "skip_if_version_exists", "PRIVATE_STORE_GROUP_CODES", "onlineVersion", "Repository overrides Organization", "delivery source of truth", "{version}.{build}.0", "allow_downgrade: false", "VERSION_DOWNGRADE_BLOCKED", "rank filtered tag names", "first usable", "lazycat-contrib/cat-led", "lazycat-contrib/lazycat-neko-webshell", "failed to spawn protoc", "edition = \"2023\""} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("SKILL.md missing %q", required)
 		}

@@ -18,7 +18,8 @@ jobs:
       operation: auto
       config: .github/lazycat-action.yml
     secrets:
-      LAZYCAT_TOKEN: ${{ secrets.LAZYCAT_TOKEN }}
+      LZC_API_HOST: ${{ secrets.LZC_API_HOST }}
+      LZC_API_TOKEN: ${{ secrets.LZC_API_TOKEN }}
       APPSTORE_URL: ${{ secrets.APPSTORE_URL }}
       APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
       APP_ID: ${{ secrets.APP_ID }}
@@ -47,7 +48,8 @@ jobs:
       go-version: 1.25.x
       versioned-release-asset: true
     secrets:
-      LAZYCAT_TOKEN: ${{ secrets.LAZYCAT_TOKEN }}
+      LZC_API_HOST: ${{ secrets.LZC_API_HOST }}
+      LZC_API_TOKEN: ${{ secrets.LZC_API_TOKEN }}
       APPSTORE_URL: ${{ secrets.APPSTORE_URL }}
       APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
       APP_ID: ${{ secrets.APP_ID }}
@@ -82,7 +84,8 @@ jobs:
       config: .github/lazycat-action.yml
       changelog: ${{ github.event.release.body }}
     secrets:
-      LAZYCAT_TOKEN: ${{ secrets.LAZYCAT_TOKEN }}
+      LZC_API_HOST: ${{ secrets.LZC_API_HOST }}
+      LZC_API_TOKEN: ${{ secrets.LZC_API_TOKEN }}
       APPSTORE_URL: ${{ secrets.APPSTORE_URL }}
       APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
       APP_ID: ${{ secrets.APP_ID }}
@@ -92,17 +95,15 @@ jobs:
 Use `update.strategy: publish`. Configure repository/organization secrets:
 
 ```text
-LAZYCAT_TOKEN
-LZC_CLI_TOKEN
-LAZYCAT_USERNAME
-LAZYCAT_PASSWORD
+LZC_API_HOST
+LZC_API_TOKEN
 APPSTORE_URL
 APPSTORE_TOKEN
 APP_ID
 PRIVATE_STORE_GROUP_CODES
 ```
 
-Only configure the credential family actually needed. Prefer a LazyCat token over username/password. `APP_ID` is optional. `PRIVATE_STORE_GROUP_CODES` is an optional comma-separated GitHub Secret; never expose it as a normal workflow input.
+Configure `LZC_API_TOKEN` whenever LazyCat image delivery or official publishing is enabled. `LZC_API_HOST` is an optional override of the production default. `APP_ID` is optional. `PRIVATE_STORE_GROUP_CODES` is an optional comma-separated GitHub Secret; never expose it as a normal workflow input.
 
 Publishing callers must assign required Secrets explicitly. `secrets: inherit` alone is not sufficient documentation and can hide that an Organization Secret has not authorized a newly added repository.
 

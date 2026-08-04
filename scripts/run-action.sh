@@ -40,7 +40,8 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 
 archive="lazycat-action_linux_${arch}.tar.gz"
-base_url="${LAZYCAT_ACTION_RELEASE_BASE_URL:-https://github.com/ca-x/lazycat-github-action/releases/download/${version}}"
+release_repository="${GITHUB_ACTION_REPOSITORY:-ca-x/lazycat-github-action}"
+base_url="${LAZYCAT_ACTION_RELEASE_BASE_URL:-https://github.com/${release_repository}/releases/download/${version}}"
 
 curl -fsSL "${base_url}/${archive}" -o "${tmp}/${archive}"
 curl -fsSL "${base_url}/checksums.txt" -o "${tmp}/checksums.txt"

@@ -67,6 +67,7 @@ type Result struct {
 
 type Publisher struct {
 	BaseURL    string
+	SDK        bool
 	HTTPClient *http.Client
 	NewDelay   func(max, initial time.Duration) func() time.Duration
 	Wait       func(context.Context, time.Duration) error
@@ -157,20 +158,27 @@ func (publisher Publisher) Publish(ctx context.Context, request Request) (Result
 	stateAware := request.Application.HasSubmissionInfo()
 	var applicationInfos []appstore.ApplicationInfo
 	if stateAware {
-		state, err := client.ApplicationState(ctx, packageID)
-		if err != nil {
-			return Result{}, sanitizePublishError(err)
-		}
-		if state.ReviewPending {
-			return Result{}, publishError(lpkgo.CodeConflict, errors.New("official application already has a pending review"))
-		}
-		if !state.Exists && !request.CreateIfMissing {
-			return Result{}, publishError(lpkgo.CodeNotFound, errors.New("official application does not exist"))
-		}
-		if !state.InformationReady {
+		if publisher.SDK {
 			applicationInfos, err = prepareApplicationInfos(ctx, client, request, application)
 			if err != nil {
 				return Result{}, err
+			}
+		} else {
+			state, stateErr := client.ApplicationState(ctx, packageID)
+			if stateErr != nil {
+				return Result{}, sanitizePublishError(stateErr)
+			}
+			if state.ReviewPending {
+				return Result{}, publishError(lpkgo.CodeConflict, errors.New("official application already has a pending review"))
+			}
+			if !state.Exists && !request.CreateIfMissing {
+				return Result{}, publishError(lpkgo.CodeNotFound, errors.New("official application does not exist"))
+			}
+			if !state.InformationReady {
+				applicationInfos, err = prepareApplicationInfos(ctx, client, request, application)
+				if err != nil {
+					return Result{}, err
+				}
 			}
 		}
 	}
@@ -179,7 +187,7 @@ func (publisher Publisher) Publish(ctx context.Context, request Request) (Result
 		if retryAfter != nil {
 			retryAfter.Reset()
 		}
-		result, err := publishAttempt(ctx, request, client, httpClient, baseURL, token, packageID, version, digest, filename, application, applicationInfos, stateAware, changelogs)
+		result, err := publishAttempt(ctx, request, client, httpClient, baseURL, token, packageID, version, digest, filename, application, applicationInfos, stateAware, publisher.SDK, changelogs)
 		created = created || result.Created
 		if err == nil {
 			result.Created = created
@@ -276,12 +284,12 @@ func publishAttempt(
 	baseURL, token, packageID, version, digest, filename string,
 	application *appstore.CreateApplicationRequest,
 	applicationInfos []appstore.ApplicationInfo,
-	stateAware bool,
+	stateAware, sdkMode bool,
 	changelogs map[string]string,
 ) (Result, error) {
 	exists := false
 	informationReady := true
-	if stateAware {
+	if stateAware && !sdkMode {
 		state, err := client.ApplicationState(ctx, packageID)
 		if err != nil {
 			return Result{}, sanitizePublishError(err)
@@ -319,7 +327,7 @@ func publishAttempt(
 		return Result{Created: created}, markNonRetryable(publishError(lpkgo.CodeRemoteUnavailable, errors.New("official upload metadata does not match the verified LPK")))
 	}
 	infos := []appstore.ApplicationInfo(nil)
-	if stateAware && !informationReady {
+	if stateAware && (sdkMode || !informationReady) {
 		infos = applicationInfos
 	}
 	if err := submitReview(ctx, httpClient, baseURL, token, upload, infos, changelogs); err != nil {

@@ -191,7 +191,7 @@ stores:
 
 `allow_downgrade` 默认为 `false`。版本来源镜像完成标签到 SemVer 的映射后，如果候选版本低于当前 `package.yml.version`，Action 会在复制镜像和修改文件前阻止降级。版本相同仍可刷新镜像引用或 digest。只有明确执行回退时才设置为 `true`。
 
-把开发者平台 token 保存为 GitHub Secret `LAZYCAT_TOKEN`，`LZC_CLI_TOKEN` 是兼容回退名称。
+生产环境默认使用 `appstore.api.lazycat.cloud`，只需把 PAT 保存为 GitHub Secret `LZC_API_TOKEN`。需要切换环境时，可用 `LZC_API_HOST` 覆盖默认域名。
 
 再添加定时和手动触发 workflow：
 
@@ -339,7 +339,7 @@ delivery:
 
 Action 把选中的源镜像提交给懒猫开发者平台，并把 `Platform` 设置为 `project.target_arch`（默认 `amd64`，可选 `arm64`）。开发者平台执行远端 Registry-to-Registry 复制，返回最终的 `registry.lazycat.cloud/...` 地址。本地 Docker 不参与这次复制。
 
-该模式需要 `LAZYCAT_TOKEN` 或 `LZC_CLI_TOKEN`。启用官方商店模式时只能使用这种交付方式。
+该模式需要 `LZC_API_TOKEN`。`LZC_API_HOST` 默认使用 `appstore.api.lazycat.cloud`，可通过环境变量覆盖。启用官方商店模式时只能使用这种交付方式。
 
 ### 显式镜像加速地址
 
@@ -394,27 +394,20 @@ reusable workflow 使用 `docker/login-action` 写入 Docker 凭据，OCI 客户
 
 ## 认证
 
-LazyCat 镜像复制和官方 LPK 提交按以下顺序解析认证信息：
+LazyCat 镜像复制和官方 LPK 提交必须提供 PAT：
 
-1. `LAZYCAT_TOKEN`
-2. `LZC_CLI_TOKEN`
-3. `LAZYCAT_USERNAME` 和 `LAZYCAT_PASSWORD`，登录后得到只保存在内存中的 token
-4. self-hosted Runner 上通过 `token-file` 显式指定的 token 文件
+    export LZC_API_TOKEN='your-personal-access-token'
 
-CI 推荐长期保存可撤销的 token。账号密码可以作为临时回退方式，但不建议把账户密码长期放在 GitHub Secrets；登录返回的 token 只在当前进程内存中使用，不写入磁盘。
+默认生产环境为：
 
-本机已经通过 lzc-cli 2.0.9 登录时，lzc-cli 先读取 `LZC_CLI_TOKEN`，否则读取 `~/.config/lazycat/box-config.json` 的 `token` 字段。`lzc-cli config get token` 会打印当前生效的 token，不要在 CI 日志中运行。GitHub 托管 Runner 无法读取你的本机登录文件，必须把 token 配置为仓库或组织 Secret。
+    LZC_API_HOST=appstore.api.lazycat.cloud
+    LZC_APPSTORE_COS_DOMAIN=dl.lazycat.cloud
 
-可信 self-hosted Runner 可以显式使用已有的 lzc-cli 兼容文件：
+两个域名都可以通过同名外部环境变量覆盖。覆盖值只填写域名，不包含协议和路径。Action 使用 HTTPS，并把开发者平台请求发送到 /sdk/v3/developer。认证只使用 X-API-Token；不会登录，不发送 X-User-Token，也不会发送 userToken Cookie。`LZC_APPSTORE_COS_DOMAIN` 只用于 `skip_if_version_exists` 匿名查询，PAT 不会发送到该域名。
 
-```yaml
-with:
-  token-file: ~/.config/lazycat/box-config.json
-```
+reusable workflow 必须使用 GitHub Secret `LZC_API_TOKEN`；`LZC_API_HOST` 是可选的环境覆盖。本地或直接调用 composite Action 时，也可以设置 `LZC_APPSTORE_COS_DOMAIN` 覆盖生产目录。PAT 不得写入仓库配置、workflow 普通输入或日志。
 
-文件必须是普通文件，路径中不能包含符号链接，并且不能授予任何 group/other 权限。Action 不会自动继承开发机的本地登录状态。底层 API 示例见 [lzc-toolkit-go 认证文档](https://github.com/lib-x/lzc-toolkit-go/blob/main/README.zh-CN.md#例子五登录并提交-lpk)。
-
-项目构建会执行仓库中的 `buildscript`。Action 会从 buildscript 环境中移除 LazyCat token、Registry 凭据、GitHub token，以及 GitHub output/control 文件路径。带写权限的发布 workflow 应只用于可信分支、tag、定时任务和手动运行，不要把继承的 Secrets 暴露给不可信 Pull Request 代码。
+项目构建会执行仓库中的 buildscript。Action 会从 buildscript 环境中移除 LZC_API_HOST、LZC_APPSTORE_COS_DOMAIN、LZC_API_TOKEN、Registry 凭据、GitHub token，以及 GitHub output/control 文件路径。带写权限的发布 workflow 应只用于可信分支、tag、定时任务和手动运行，不要把 Secrets 暴露给不可信 Pull Request 代码。
 
 ## Pull Request 和 Release 工作流
 
@@ -509,13 +502,14 @@ stores:
 
 `skip_if_version_exists: true` 会在 LPK 校验完成后，通过精确包名匿名查询官方商店。版本相同时返回 `published: false`、`skipped: true` 和 `skipReason: version-already-online`。两者均为合法 SemVer、线上版本更高且 `update.allow_downgrade: false` 时，也会安全跳过并返回 `skipReason: online-version-newer`；只有显式设置 `allow_downgrade: true` 才继续执行回退提交。non-SemVer 值只判断精确相等，绝不按字符串猜测顺序。跳过时不会解析开发者 Token，也不会提交 LPK。应用不存在时继续发布；其他查询错误直接失败。该选项默认 `false`，`dry-run` 仍然完全不发起远端请求。
 
+设置 `LZC_APPSTORE_COS_DOMAIN` 时，版本查询使用该 COS 域名；未设置时使用生产目录。
+
 官方发布始终把已验证的本地 LPK 文件作为 multipart 数据上传，绝不会把 GitHub Release URL 发送给官方平台。复用 Release Asset 时，会先把精确版本文件下载到项目目录下并重新校验。
 
 官方重试为显式开启，默认 `enabled: false`。启用后，`max_attempts` 为 2-10 且包含首次尝试，`initial_delay` 与 `max_delay` 使用 Go duration 语法。审核前的安全重试会重新检查应用是否存在并重新打开 LPK，但凭据只解析一次。上传/检查阶段可重试无 HTTP 状态的连接/TLS/重置错误、HTTP 429 和 HTTP 5xx；审核创建只重试 HTTP 429。审核阶段的网络错误或 5xx 不会重放，因为服务端可能已经受理这个非幂等请求。取消、deadline 超时、鉴权、权限、NotFound、完整性错误、HTTP 400 和其他 4xx 都不重试。
 
 失败会安全地区分 `store.official.upload` 与 `store.official.review`。Action 绝不打印原始响应正文；对合法 JSON 错误，只会显示经过单行化和长度限制的 `message`、`msg`、字符串 `error` 或嵌套的 `error.message`/`error.msg`，疑似凭据内容会被隐藏。双商店 reusable workflow 中，私有结果会被保留，官方失败降级为 warning，并写入 `store-results.official.failureReason: official-publish-failed`；如果官方商店是唯一目标，失败仍会使 workflow 失败。未启用官方商店时，不运行官方 lint 阻断、预检、凭据解析或发布。
 
-reusable workflow 接受 `LAZYCAT_TOKEN`、`LZC_CLI_TOKEN`，或者 `LAZYCAT_USERNAME` 加 `LAZYCAT_PASSWORD`。推荐使用 token。
 
 ### 喵喵私有商店
 
@@ -646,6 +640,7 @@ cp -R web-dist/. dist/content/
 workflow 使用 `toolchains: node`，并传 `node-version` 或提交 `.node-version`。
 
 如果 `.github/lazycat-action.yml` 同时声明了 `build.toolchains`，其中的工具链种类必须与 reusable workflow 输入一致。两边都显式填写版本时，版本也必须一致。
+`build.toolchains[].version` 只支持 `go`、`node` 和 `rust`；`docker` 必须省略 `version`。
 
 ### Go Exec 构建
 

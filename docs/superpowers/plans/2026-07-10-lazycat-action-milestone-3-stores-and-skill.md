@@ -16,7 +16,7 @@
 - Keep `pull` as the default update strategy; store publishing is allowed only for `publish` and never for pull-request validation.
 - Official publishing is forbidden when any configured image uses `direct` or `mirror`; private publishing supports all delivery modes and projects with no services.
 - Private-store external publishing requires both a real GitHub Release Asset HTTPS URL and the locally computed lowercase SHA256.
-- Credential precedence is `LAZYCAT_TOKEN`, `LZC_CLI_TOKEN`, username/password login, then an explicitly configured token file.
+- Official developer-platform authentication uses only `LZC_API_HOST` and `LZC_API_TOKEN`.
 - Never place tokens, passwords, authorization headers, cookies, signed URLs, or raw remote error bodies in logs, summaries, result JSON, or returned errors.
 - All public Action changes are additive: retain existing inputs, outputs, JSON fields, event behavior, and error semantics.
 - Use table-driven unit tests and `go test -race`; validate all external configuration and remote JSON at package boundaries.
@@ -100,9 +100,9 @@
 - Consumes: `auth.StaticToken`, `auth.Client.Login`, and `auth/tokenfile.Store` from `lzc-toolkit-go`.
 - Produces: `platformauth.Resolver.Resolve(context.Context, Request) (Result, error)`.
 
-- [x] **Step 1: Write failing precedence, login, token-file, and redaction tests**
+- [x] **Step 1: Write failing PAT and redaction tests**
 
-  Cover these cases in a table: `LAZYCAT_TOKEN` wins; `LZC_CLI_TOKEN` is second; complete username/password invokes login once and keeps the token in memory; one missing credential fails; explicit token file is last; missing credentials return unauthenticated; errors never contain token or password values.
+  Cover these cases in a table: `LZC_API_TOKEN` is required, whitespace is trimmed, missing credentials return unauthenticated, and errors never contain token values.
 
 - [x] **Step 2: Run the resolver test and confirm it fails**
 
@@ -430,7 +430,7 @@
 
 - [x] **Step 1: Add failing workflow contract assertions**
 
-  Extend shell/metadata tests to require optional secrets `LAZYCAT_USERNAME`, `LAZYCAT_PASSWORD`, `APPSTORE_URL`, `APPSTORE_TOKEN`, and `APP_ID`; token-file input; store outputs; conditions that require `update-strategy == 'publish'`; and private publishing only after `asset-url` produced a non-empty URL.
+  Extend shell/metadata tests to require optional secrets `LZC_API_HOST`, `LZC_API_TOKEN`, `APPSTORE_URL`, `APPSTORE_TOKEN`, and `APP_ID`; store outputs; conditions that require `update-strategy == 'publish'`; and private publishing only after `asset-url` produced a non-empty URL.
 
 - [x] **Step 2: Run workflow contract tests and confirm failure**
 
@@ -494,7 +494,7 @@
 
 - [x] **Step 3: Write Chinese and English end-to-end documentation**
 
-  Explain that GitHub-hosted runners do not inherit local login state. Document token extraction as `LZC_CLI_TOKEN` first and `~/.config/lazycat/box-config.json` field `token` second; warn that `lzc-cli config get token` prints a secret and must not be logged. Show account/password login as a temporary in-memory CI fallback. Include full YAML for official publishing and both private create-app and add-version paths.
+  Explain that GitHub-hosted runners require `LZC_API_TOKEN`, that `LZC_API_HOST` optionally overrides the production default, and that the PAT must be stored as a Secret, and that it must never be logged. Include full YAML for official publishing and both private create-app and add-version paths.
 
 - [x] **Step 4: Add runnable build examples**
 

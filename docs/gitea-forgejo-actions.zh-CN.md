@@ -181,7 +181,8 @@ stores:
   id: lazycat-publish
   uses: https://github.com/ca-x/lazycat-github-action@v1
   env:
-    LAZYCAT_TOKEN: ${{ secrets.LAZYCAT_TOKEN }}
+    LZC_API_HOST: ${{ secrets.LZC_API_HOST }}
+    LZC_API_TOKEN: ${{ secrets.LZC_API_TOKEN }}
   with:
     operation: publish-official
     config: .github/lazycat-action.yml
@@ -191,7 +192,7 @@ stores:
     sha256: ${{ steps.lazycat-build.outputs.sha256 }}
 ```
 
-除了 `LAZYCAT_TOKEN`，也可以按照主 README 的认证说明使用 `LZC_CLI_TOKEN`、`LAZYCAT_USERNAME` 和 `LAZYCAT_PASSWORD`，或者传入 `token-file`。所有凭据都应保存在平台的 Secret 管理功能中。
+懒猫开发者平台凭据只需要 `LZC_API_TOKEN`，并应保存在平台的 Secret 管理功能中。`LZC_API_HOST` 仅用于覆盖生产默认域名。
 
 ## 启动文件下载和内网环境
 

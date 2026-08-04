@@ -325,7 +325,7 @@ type Result struct {
 }
 ```
 
-For mirror templates support `{tag}`, `{digest}`, and `{source}`. Dry-run never calls copier or mirror inspection. LazyCat token resolution is `LAZYCAT_TOKEN`, then `LZC_CLI_TOKEN`; missing token produces a typed authentication error. Account/password login remains Milestone 3.
+For mirror templates support `{tag}`, `{digest}`, and `{source}`. Dry-run never calls copier or mirror inspection. LazyCat platform authentication uses `LZC_API_HOST` and `LZC_API_TOKEN`; a missing PAT produces a typed authentication error.
 
 - [ ] **Step 3: Verify and commit**
 

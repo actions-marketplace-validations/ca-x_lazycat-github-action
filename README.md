@@ -191,7 +191,7 @@ stores:
 
 `allow_downgrade` defaults to `false`. After the version-source image tag is mapped to SemVer, the Action blocks a version lower than the current `package.yml.version` before image copying or file edits. Equal versions remain eligible for image-reference or digest refresh. Set it to `true` only for an intentional rollback.
 
-Store a developer-platform token as the `LAZYCAT_TOKEN` GitHub secret. `LZC_CLI_TOKEN` is the fallback name.
+Production defaults to `appstore.api.lazycat.cloud`; store only the PAT as the `LZC_API_TOKEN` GitHub secret. Set `LZC_API_HOST` only to override the default host.
 
 Then add a scheduled and manual caller workflow:
 
@@ -339,7 +339,7 @@ delivery:
 
 The Action sends the selected source reference to the LazyCat developer platform with `Platform` equal to `project.target_arch` (`amd64` by default, optionally `arm64`). The platform performs a remote Registry-to-Registry copy and returns the final `registry.lazycat.cloud/...` reference. Local Docker is not used for this copy.
 
-This mode requires `LAZYCAT_TOKEN` or `LZC_CLI_TOKEN`. It is the only delivery mode accepted when `stores.official.enabled` is true.
+This mode requires `LZC_API_TOKEN`. `LZC_API_HOST` defaults to `appstore.api.lazycat.cloud` and may be overridden. It is the only delivery mode accepted when `stores.official.enabled` is true.
 
 ### Explicit mirror
 
@@ -394,27 +394,22 @@ The reusable workflow runs `docker/login-action`, which writes Docker credential
 
 ## Authentication
 
-LazyCat image copy and official LPK publishing resolve credentials in this order:
+LazyCat image copy and official LPK publishing require a PAT:
 
-1. `LAZYCAT_TOKEN`
-2. `LZC_CLI_TOKEN`
-3. `LAZYCAT_USERNAME` plus `LAZYCAT_PASSWORD`, exchanged for an in-memory token
-4. the explicit `token-file` workflow input on a self-hosted Runner
-
-CI should normally store a token. Username/password is supported as a temporary fallback, but keeping an account password as a long-lived GitHub secret is less desirable than a scoped/revocable token. The login response is kept in memory and is not written to disk.
-
-When lzc-cli 2.0.9 is already logged in locally, it checks `LZC_CLI_TOKEN` first and then the `token` field in `~/.config/lazycat/box-config.json`. `lzc-cli config get token` prints the effective token, so do not run that command in CI logs. A GitHub-hosted Runner cannot read your local login file; add the token as a repository or organization secret.
-
-On a trusted self-hosted Runner, an existing lzc-cli-compatible file can be selected explicitly:
-
-```yaml
-with:
-  token-file: ~/.config/lazycat/box-config.json
+```text
+LZC_API_TOKEN=your-personal-access-token
 ```
 
-The file must be a regular file, must not contain symbolic-link path components, and must not grant any group/other permissions. The Action does not automatically inherit a developer workstation login. See the [lzc-toolkit-go authentication examples](https://github.com/lib-x/lzc-toolkit-go#example-5-log-in-and-submit-an-lpk) for the underlying API.
+The production defaults are:
 
-Project builds execute repository-controlled `buildscript` commands. The Action removes LazyCat tokens, Registry credentials, GitHub tokens, and GitHub output/control file paths from the buildscript environment. Keep write-permission release workflows on trusted branches, tags, schedules, and manual runs; do not expose inherited secrets to untrusted pull-request code.
+```text
+LZC_API_HOST=appstore.api.lazycat.cloud
+LZC_APPSTORE_COS_DOMAIN=dl.lazycat.cloud
+```
+
+Either domain can be overridden by its environment variable. Override values must contain only a host name, without a scheme or path. The Action uses HTTPS, sends developer-platform requests under `/sdk/v3/developer`, and authenticates only with `X-API-Token`. It does not send `X-User-Token` or a `userToken` Cookie. `LZC_APPSTORE_COS_DOMAIN` is used only for anonymous `skip_if_version_exists` lookups, and the PAT is never sent to that domain.
+
+The reusable workflow requires the `LZC_API_TOKEN` GitHub Secret; `LZC_API_HOST` is an optional override. Direct composite or local callers may additionally override `LZC_APPSTORE_COS_DOMAIN`. Never put the PAT in repository configuration, normal workflow inputs, or logs. Project build scripts do not receive any of these variables.
 
 ## Pull request and Release workflows
 
@@ -509,13 +504,14 @@ Screenshot files must already be committed and pushed to a ref the workflow will
 
 `skip_if_version_exists: true` performs an anonymous exact-package lookup after the LPK is verified. An equal version succeeds with `published: false`, `skipped: true`, and `skipReason: version-already-online`. When both values are valid SemVer, an online version newer than the candidate is also skipped with `skipReason: online-version-newer` while `update.allow_downgrade: false`; explicit `allow_downgrade: true` permits the rollback submission. Non-SemVer values use exact equality only and are never ordered lexically. Skips happen without resolving a developer token or submitting the LPK. Not-found continues publishing; any other lookup failure stops the operation. The option defaults to `false`, and `dry-run` remains network-free.
 
+When `LZC_APPSTORE_COS_DOMAIN` is set, that lookup uses the configured COS domain; otherwise it uses the production catalog.
+
 Official publishing always uploads the verified local LPK file as multipart data; it never sends the GitHub Release URL to the official platform. A recovered Release Asset is first downloaded beneath the project root and revalidated.
 
 Official retry is opt-in and defaults to `enabled: false`. `max_attempts` includes the initial attempt and accepts 2-10 when enabled. `initial_delay` and `max_delay` use Go duration syntax. A safe retry before review repeats the application existence check and reopens the LPK, while credentials are resolved once. Upload/check failures may retry status-less connection/TLS/reset errors, HTTP 429, and HTTP 5xx. Review creation retries only HTTP 429; a review network failure or 5xx is returned without replay because the server may already have accepted the non-idempotent request. Cancellation, deadline expiry, authentication/permission failures, NotFound, integrity failures, HTTP 400, and other 4xx responses are not retried.
 
 Failures identify the safe stage as `store.official.upload` or `store.official.review`. The Action never prints a raw upstream response body. For valid JSON failures it may display a normalized, bounded `message`, `msg`, string `error`, or nested `error.message`/`error.msg`; suspected credential content is suppressed. In a dual-store reusable workflow, an official failure becomes a warning and `store-results.official.failureReason: official-publish-failed` after the private result is preserved. An official-only workflow remains strict and fails. If the official store is disabled, official lint blocking, precheck, credentials, and publication do not run.
 
-The reusable workflow accepts `LAZYCAT_TOKEN`, `LZC_CLI_TOKEN`, or `LAZYCAT_USERNAME` plus `LAZYCAT_PASSWORD` as secrets. Token authentication is recommended.
 
 ### MiaoMiao private store
 
@@ -646,6 +642,7 @@ cp -R web-dist/. dist/content/
 Use `toolchains: node` and either pass `node-version` or commit `.node-version`.
 
 If `.github/lazycat-action.yml` also declares `build.toolchains`, its toolchain kinds must match the reusable workflow input. Explicit versions must match when both places provide one.
+`build.toolchains[].version` is supported only for `go`, `node`, and `rust`; omit it for `docker`.
 
 ### Go Exec build
 

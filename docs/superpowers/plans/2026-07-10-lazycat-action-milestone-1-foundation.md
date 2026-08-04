@@ -821,7 +821,7 @@ Schedule without images returns a clear `PROJECT_UNSUPPORTED` error until Milest
 
 - [ ] **Step 2: Write GitHub I/O tests**
 
-Given `INPUT_OPERATION=build`, `INPUT_CONFIG=.github/lazycat-action.yml`, `INPUT_VERSION=1.2.3`, `GITHUB_REF_TYPE=tag`, and `GITHUB_REF_NAME=v1.2.3`, assert exact `action.Input` values. Verify multiline outputs use GitHub delimiter syntax and JSON is compact. Verify environment values named `LAZYCAT_TOKEN`, `LZC_CLI_TOKEN`, `LAZYCAT_PASSWORD`, `APPSTORE_TOKEN`, and `Authorization` never appear in output or errors.
+Given `INPUT_OPERATION=build`, `INPUT_CONFIG=.github/lazycat-action.yml`, `INPUT_VERSION=1.2.3`, `GITHUB_REF_TYPE=tag`, and `GITHUB_REF_NAME=v1.2.3`, assert exact `action.Input` values. Verify multiline outputs use GitHub delimiter syntax and JSON is compact. Verify environment values named `LZC_API_TOKEN`, `APPSTORE_TOKEN`, and `Authorization` never appear in output or errors.
 
 - [ ] **Step 3: Run focused tests and confirm failure**
 

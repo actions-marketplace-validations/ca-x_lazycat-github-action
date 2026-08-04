@@ -215,6 +215,9 @@ func validate(value Config) error {
 		default:
 			return fmt.Errorf("unsupported toolchain kind %q", toolchain.Kind)
 		}
+		if toolchain.Kind == "docker" && toolchain.Version != "" {
+			return errors.New("docker toolchain version is not supported")
+		}
 		if _, exists := toolchains[toolchain.Kind]; exists {
 			return fmt.Errorf("duplicate toolchain kind %q", toolchain.Kind)
 		}

@@ -69,13 +69,13 @@ func TestReusableWorkflowContractAndActionRefs(t *testing.T) {
 		t.Fatalf("workflow_call=%#v", on["workflow_call"])
 	}
 	inputs, _ := call["inputs"].(map[string]any)
-	for _, name := range []string{"config", "operation", "runner", "image-id", "dry-run", "changelog", "token-file", "toolchains", "go-version", "node-version", "rust-toolchain", "node-package-manager", "enable-qemu"} {
+	for _, name := range []string{"config", "operation", "runner", "image-id", "dry-run", "changelog", "toolchains", "go-version", "node-version", "rust-toolchain", "node-package-manager", "enable-qemu"} {
 		if _, found := inputs[name]; !found {
 			t.Fatalf("missing workflow input %q", name)
 		}
 	}
 	secrets, _ := call["secrets"].(map[string]any)
-	for _, name := range []string{"LAZYCAT_TOKEN", "LZC_CLI_TOKEN", "LAZYCAT_USERNAME", "LAZYCAT_PASSWORD", "APPSTORE_URL", "APPSTORE_TOKEN", "APP_ID", "PRIVATE_STORE_GROUP_CODES", "REGISTRY", "REGISTRY_USERNAME", "REGISTRY_PASSWORD"} {
+	for _, name := range []string{"LZC_API_HOST", "LZC_API_TOKEN", "APPSTORE_URL", "APPSTORE_TOKEN", "APP_ID", "PRIVATE_STORE_GROUP_CODES", "REGISTRY", "REGISTRY_USERNAME", "REGISTRY_PASSWORD"} {
 		if _, found := secrets[name]; !found {
 			t.Fatalf("missing workflow secret %q", name)
 		}
@@ -342,7 +342,7 @@ func TestActionMetadataExposesStableContract(t *testing.T) {
 	if err := yaml.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	for _, input := range []string{"operation", "config", "image-id", "version", "changelog", "lpk-path", "download-url", "sha256", "token-file", "dry-run"} {
+	for _, input := range []string{"operation", "config", "image-id", "version", "changelog", "lpk-path", "download-url", "sha256", "dry-run"} {
 		if _, exists := document.Inputs[input]; !exists {
 			t.Fatalf("missing input %q", input)
 		}
@@ -358,8 +358,8 @@ func TestActionMetadataExposesStableContract(t *testing.T) {
 	if document.Runs.Using != "composite" {
 		t.Fatalf("runs.using=%q", document.Runs.Using)
 	}
-	if !strings.Contains(string(data), "LAZYCAT_ACTION_VERSION: v1.1.24") {
-		t.Fatal("action.yml must bootstrap release v1.1.24")
+	if !strings.Contains(string(data), "LAZYCAT_ACTION_VERSION: v1.2.0") {
+		t.Fatal("action.yml must bootstrap release v1.2.0")
 	}
 }
 
@@ -561,7 +561,6 @@ func TestActionMetadataUsesBracketSyntaxForHyphenatedNames(t *testing.T) {
 		"steps.run.outputs['update-strategy']",
 		"inputs['image-id']",
 		"inputs['download-url']",
-		"inputs['token-file']",
 	} {
 		if !strings.Contains(text, expression) {
 			t.Fatalf("action.yml is missing safe expression %q", expression)

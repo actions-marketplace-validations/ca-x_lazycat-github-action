@@ -21,7 +21,6 @@ func TestReadInputNormalizesTagVersionAndActionFields(t *testing.T) {
 		"INPUT_LPK_PATH":                  "dist/app.lpk",
 		"INPUT_DOWNLOAD_URL":              "https://github.com/acme/app/releases/download/v1.2.3/app.lpk",
 		"INPUT_SHA256":                    strings.Repeat("a", 64),
-		"INPUT_TOKEN_FILE":                "/run/secrets/lazycat.json",
 		"INPUT_DRY_RUN":                   "true",
 		"GITHUB_EVENT_NAME":               "push",
 		"GITHUB_REF_TYPE":                 "tag",
@@ -41,9 +40,6 @@ func TestReadInputNormalizesTagVersionAndActionFields(t *testing.T) {
 	}
 	if input.Version != "1.2.3" || input.Tag != "v1.2.3" || !input.DryRun || input.SourceDateEpoch != 1783641600 {
 		t.Fatalf("input=%#v", input)
-	}
-	if input.TokenFile != "/run/secrets/lazycat.json" {
-		t.Fatalf("token file=%q", input.TokenFile)
 	}
 	if input.ExpectedSHA256 != strings.Repeat("a", 64) {
 		t.Fatalf("expected sha256=%q", input.ExpectedSHA256)
@@ -70,7 +66,7 @@ func TestReadInputReadsReleaseTagFromEventFile(t *testing.T) {
 
 func TestWriteOutputsUsesStableKeysAndDoesNotLeakSecrets(t *testing.T) {
 	for key, value := range map[string]string{
-		"LAZYCAT_TOKEN": "lazycat-secret", "LZC_CLI_TOKEN": "cli-secret", "LAZYCAT_PASSWORD": "password-secret", "APPSTORE_TOKEN": "store-secret",
+		"LZC_API_HOST": "api.example.invalid", "LZC_API_TOKEN": "pat-secret", "APPSTORE_TOKEN": "store-secret",
 	} {
 		t.Setenv(key, value)
 	}

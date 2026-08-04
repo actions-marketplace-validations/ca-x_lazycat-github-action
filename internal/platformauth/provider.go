@@ -6,14 +6,13 @@ import (
 )
 
 type Provider struct {
-	resolver  Resolver
-	tokenFile func() string
-	mu        sync.Mutex
-	token     string
+	resolver Resolver
+	mu       sync.Mutex
+	token    string
 }
 
-func NewProvider(resolver Resolver, tokenFile func() string) *Provider {
-	return &Provider{resolver: resolver, tokenFile: tokenFile}
+func NewProvider(resolver Resolver) *Provider {
+	return &Provider{resolver: resolver}
 }
 
 func (provider *Provider) Token(ctx context.Context) (string, error) {
@@ -22,11 +21,7 @@ func (provider *Provider) Token(ctx context.Context) (string, error) {
 	if provider.token != "" {
 		return provider.token, nil
 	}
-	path := ""
-	if provider.tokenFile != nil {
-		path = provider.tokenFile()
-	}
-	resolved, err := provider.resolver.Resolve(ctx, Request{TokenFile: path})
+	resolved, err := provider.resolver.Resolve(ctx)
 	if err != nil {
 		return "", err
 	}

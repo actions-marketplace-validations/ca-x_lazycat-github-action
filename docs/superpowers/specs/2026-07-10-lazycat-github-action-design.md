@@ -528,14 +528,7 @@ Release Asset 使用其他成熟 GitHub Action 上传；核心 Go Action 只负�
 
 官方发布复用 `lzc-toolkit-go/appstore`：镜像复制调用 `CopyImage`，LPK 提交调用 `Publish`，从而保持与 lzc-cli 2.0.8 的实际协议一致。
 
-认证优先级：
-
-1. `LAZYCAT_TOKEN` GitHub Secret；
-2. `LZC_CLI_TOKEN` GitHub Secret；
-3. `LAZYCAT_USERNAME` 与 `LAZYCAT_PASSWORD` 登录后获得临时 token；
-4. self-hosted Runner 明确配置的 token 文件。
-
-CI 推荐使用 token，不长期保存账户密码。账户密码登录调用 `https://account.lazycat.cloud/api/login/signin`，只在内存中使用返回 token。若本地已经登录 lzc-cli 2.0.8，有效 token 的本地来源顺序是 `LZC_CLI_TOKEN`，然后是 `~/.config/lazycat/box-config.json` 的 `token` 字段；`lzc-cli config get token` 可以读取生效值，但文档会警告不要把它打印到 CI 日志。GitHub-hosted Runner 不会拥有开发机的本地登录状态。
+认证只使用 `LZC_API_TOKEN`。`LZC_API_HOST` 默认使用 `appstore.api.lazycat.cloud`，可由外部环境变量覆盖。开发者平台请求通过 `X-API-Token` 发送 PAT，不执行账号密码登录，也不读取本地 token 文件；GitHub-hosted Runner 和本地调用都不得在日志中输出 PAT。
 
 ### 12.2 喵喵私有商店
 

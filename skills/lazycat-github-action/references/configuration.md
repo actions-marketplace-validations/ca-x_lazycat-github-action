@@ -34,6 +34,7 @@ stores:
 ```
 
 Unknown fields fail validation. Paths must remain under `project.root`. Output must end in `.lpk`. `project.target_arch` defaults to `amd64` and accepts `amd64` or `arm64`; the target OS remains Linux.
+`build.toolchains[].version` is supported only for `go`, `node`, and `rust`; `docker` must omit `version`.
 
 `project.output` is the verified build output and validation Artifact. When the caller sets reusable-workflow input `versioned-release-asset: true`, the workflow copies that verified file to `<package-id>-v<version>.lpk` for the GitHub Release. The copy stays beside the verified LPK under `project.root`. Private publication uses the verified Release Asset URL and SHA256; official publication uploads the same locally verified LPK bytes and SHA256 without receiving that URL.
 
@@ -178,14 +179,7 @@ For agent-generated screenshots, use `agent-browser` to open the application at 
 
 Official lint does not turn every compatibility warning into a failure. Unknown `container_name` remains a visible warning; only official warnings block the official precheck, and an equal/newer online version skips before that precheck. Official HTTP failures keep the safe stage and status. The raw body is hidden, while a recognized JSON `message`, `msg`, string `error`, or nested `error.message`/`error.msg` may be displayed after one-line normalization, a 512-byte limit, and credential suppression.
 
-Authentication precedence:
-
-1. `LAZYCAT_TOKEN`
-2. `LZC_CLI_TOKEN`
-3. `LAZYCAT_USERNAME` plus `LAZYCAT_PASSWORD`
-4. explicit `token-file`
-
-Local lzc-cli uses `LZC_CLI_TOKEN`, then `~/.config/lazycat/box-config.json` field `token`. GitHub-hosted runners do not inherit this file.
+LazyCat developer-platform writes require `LZC_API_TOKEN`. Production defaults are `LZC_API_HOST=appstore.api.lazycat.cloud` and `LZC_APPSTORE_COS_DOMAIN=dl.lazycat.cloud`; either domain may be overridden through its environment variable. Override values contain no scheme or path. The PAT is sent only as `X-API-Token`; username/password login, lzc-cli tokens, and token files are unsupported.
 
 ## MiaoMiao private store
 
