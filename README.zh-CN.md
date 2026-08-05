@@ -4,7 +4,7 @@
 
 `ca-x/lazycat-github-action` 用于检查 Docker 镜像版本、精确更新 LazyCat Manifest、构建 LPK、创建更新 Pull Request，并把校验后的 LPK 上传到 GitHub Release。
 
-Action 使用 [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.3.5`，兼容基线是 `@lazycatcloud/lzc-cli` `2.0.9`。
+Action 使用 [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.4.0`，兼容基线是 `@lazycatcloud/lzc-cli` `2.0.9`。
 
 当前交付范围：
 

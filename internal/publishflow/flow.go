@@ -14,13 +14,13 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/ca-x/lazycat-github-action/internal/config"
 	"github.com/ca-x/lazycat-github-action/internal/lpkcheck"
-	"github.com/ca-x/lazycat-github-action/internal/platformapi"
 	"github.com/ca-x/lazycat-github-action/internal/platformauth"
 	"github.com/ca-x/lazycat-github-action/internal/project"
 	"github.com/ca-x/lazycat-github-action/internal/store/official"
 	private "github.com/ca-x/lazycat-github-action/internal/store/private"
 	"github.com/ca-x/lazycat-github-action/internal/storelookup"
 	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	officialcatalog "github.com/lib-x/lzc-toolkit-go/appstore/official"
 )
 
 var (
@@ -95,7 +95,7 @@ func platformPublisher(resolved platformauth.Result) official.Publisher {
 		return official.Publisher{}
 	}
 	return official.Publisher{
-		BaseURL: resolved.BaseURL, HTTPClient: platformapi.HTTPClient(nil), SDK: true,
+		BaseURL: resolved.BaseURL, SDK: true,
 	}
 }
 
@@ -233,7 +233,11 @@ func (flow Flow) checkExisting(ctx context.Context, request Request, artifact lp
 		return "", "", nil
 	}
 	if request.Target == TargetOfficial {
-		baseURL, err := platformapi.AppStoreCOSBaseURL()
+		lookup := flow.LookupEnv
+		if lookup == nil {
+			lookup = os.LookupEnv
+		}
+		baseURL, err := officialcatalog.MetadataBaseURL(envValue(lookup, "LZC_APPSTORE_COS_DOMAIN"))
 		if err != nil {
 			return "", "", fmt.Errorf("configure official store metadata: %w", err)
 		}

@@ -22,7 +22,6 @@ import (
 	"github.com/ca-x/lazycat-github-action/internal/httpx"
 	"github.com/ca-x/lazycat-github-action/internal/imageflow"
 	"github.com/ca-x/lazycat-github-action/internal/platform"
-	"github.com/ca-x/lazycat-github-action/internal/platformapi"
 	"github.com/ca-x/lazycat-github-action/internal/platformauth"
 	"github.com/ca-x/lazycat-github-action/internal/project"
 	"github.com/ca-x/lazycat-github-action/internal/publishflow"
@@ -219,19 +218,21 @@ func (copier *platformImageCopier) clientFor(ctx context.Context) (*appstore.Cli
 	if err != nil {
 		return nil, err
 	}
-	copier.client = appstore.New(platformStoreOptions(resolved))
+	copier.client, err = platformStoreClient(resolved, appstore.Options{})
+	if err != nil {
+		return nil, err
+	}
 	return copier.client, nil
 }
 
-func platformStoreOptions(resolved platformauth.Result) appstore.Options {
-	options := appstore.Options{Token: resolved.Provider}
+func platformStoreClient(resolved platformauth.Result, options appstore.Options) (*appstore.Client, error) {
+	options.Token = resolved.Provider
 	if resolved.Protocol == platformauth.ProtocolPAT {
 		options.BaseURL = resolved.BaseURL
-		options.HTTPClient = platformapi.HTTPClient(nil)
-	} else {
-		options.HTTPClient = httpx.NoRedirect(nil, 30*time.Second)
+		return appstore.NewPAT(options)
 	}
-	return options
+	options.HTTPClient = httpx.NoRedirect(options.HTTPClient, 30*time.Second)
+	return appstore.New(options), nil
 }
 
 func ResolveOperation(input Input) (Operation, error) {

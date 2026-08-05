@@ -13,20 +13,27 @@ import (
 	"github.com/lib-x/lzc-toolkit-go/auth"
 )
 
-func TestPlatformStoreOptionsSelectAuthenticationProtocol(t *testing.T) {
-	t.Setenv("LZC_API_HOST", "")
-	provider := auth.StaticToken("token")
+func TestPlatformStoreClientUsesToolkitPATAPI(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/sdk/v3/developer/app/check/exist" {
+			t.Errorf("path=%q", request.URL.Path)
+		}
+		if request.Header.Get("X-API-Token") != "pat-token" || request.Header.Get("X-User-Token") != "" || request.Header.Get("Cookie") != "" {
+			t.Errorf("headers=%v", request.Header)
+		}
+		_, _ = response.Write([]byte(`{"errorCode":0,"msg":"ok","data":{"exist":true}}`))
+	}))
+	defer server.Close()
 
-	pat := platformStoreOptions(platformauth.Result{
-		Protocol: platformauth.ProtocolPAT, Provider: provider, BaseURL: "https://appstore.api.lazycat.cloud",
-	})
-	if pat.BaseURL != "https://appstore.api.lazycat.cloud" || pat.HTTPClient == nil || pat.Token == nil {
-		t.Fatalf("PAT options=%#v", pat)
+	client, err := platformStoreClient(platformauth.Result{
+		Protocol: platformauth.ProtocolPAT, Provider: auth.StaticToken("pat-token"), BaseURL: server.URL,
+	}, appstore.Options{HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	legacy := platformStoreOptions(platformauth.Result{Protocol: platformauth.ProtocolLegacySession, Provider: provider})
-	if legacy.BaseURL != "" || legacy.HTTPClient == nil || legacy.Token == nil {
-		t.Fatalf("legacy options=%#v", legacy)
+	exists, err := client.CheckApplication(t.Context(), "cloud.lazycat.example")
+	if err != nil || !exists {
+		t.Fatalf("exists=%t err=%v", exists, err)
 	}
 }
 
@@ -75,12 +82,14 @@ func TestLegacyImageCopyDoesNotForwardSessionAcrossRedirect(t *testing.T) {
 	}))
 	defer origin.Close()
 
-	options := platformStoreOptions(platformauth.Result{
+	client, err := platformStoreClient(platformauth.Result{
 		Protocol: platformauth.ProtocolLegacySession,
 		Provider: auth.StaticToken("legacy-session"),
-	})
-	options.BaseURL = origin.URL
-	_, err := appstore.New(options).CopyImage(context.Background(), appstore.CopyImageRequest{
+	}, appstore.Options{BaseURL: origin.URL, HTTPClient: origin.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.CopyImage(context.Background(), appstore.CopyImageRequest{
 		Image: "docker.io/library/alpine:latest", Platform: "amd64",
 	})
 	if err == nil || !errors.Is(err, lpkgo.ErrRemoteUnavailable) {

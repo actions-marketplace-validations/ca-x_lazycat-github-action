@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ca-x/lazycat-github-action/internal/platformapi"
 	lpkgo "github.com/lib-x/lzc-toolkit-go"
+	"github.com/lib-x/lzc-toolkit-go/appstore"
 	"github.com/lib-x/lzc-toolkit-go/auth"
 )
 
@@ -43,7 +43,7 @@ func (resolver Resolver) Resolve(ctx context.Context) (Result, error) {
 	baseURL := ""
 	if protocol == ProtocolPAT {
 		var err error
-		baseURL, err = platformapi.ResolveBaseURL(environmentValue(lookup, "LZC_API_HOST"))
+		baseURL, err = appstore.ResolvePATBaseURL(environmentValue(lookup, "LZC_API_HOST"))
 		if err != nil {
 			return Result{}, authError(lpkgo.CodeInvalidArgument, err)
 		}

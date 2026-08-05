@@ -15,7 +15,7 @@ func TestPlatformPublisherSelectsAuthenticationProtocol(t *testing.T) {
 		Provider: auth.StaticToken("pat"),
 		BaseURL:  "https://api.example.invalid",
 	})
-	if pat.BaseURL != "https://api.example.invalid" || pat.HTTPClient == nil || !pat.SDK {
+	if pat.BaseURL != "https://api.example.invalid" || pat.HTTPClient != nil || !pat.SDK {
 		t.Fatalf("PAT publisher=%#v", pat)
 	}
 

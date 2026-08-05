@@ -132,7 +132,14 @@ func (publisher Publisher) Publish(ctx context.Context, request Request) (Result
 	if request.Retry.Enabled && request.Retry.MaxAttempts > 1 {
 		maxAttempts = request.Retry.MaxAttempts
 	}
-	httpClient := httpx.NoRedirect(publisher.HTTPClient, 30*time.Second)
+	baseHTTPClient := publisher.HTTPClient
+	if publisher.SDK {
+		baseHTTPClient, err = appstore.NewPATHTTPClient(baseURL, baseHTTPClient)
+		if err != nil {
+			return Result{}, sanitizePublishError(err)
+		}
+	}
+	httpClient := httpx.NoRedirect(baseHTTPClient, 30*time.Second)
 	var retryAfter *retryAfterRecorder
 	var nextDelay func() time.Duration
 	var wait func(context.Context, time.Duration) error
