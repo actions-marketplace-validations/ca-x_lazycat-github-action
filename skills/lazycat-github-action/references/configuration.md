@@ -60,6 +60,15 @@ The version source answers “which upstream version changes package.yml.” The
 
 Use `exclude_regex` to remove Windows/ARM tags. `version_regex` must contain `(?P<version>...)`; `version_template` defaults to `{version}`. Every named capture is available as an exact placeholder. For example, `^(?P<version>\d{8})\.0*(?P<build>[1-9]\d*)$` plus `{version}.{build}.0` maps `20260603.01` to `20260603.1.0`. Unknown placeholders and non-SemVer expanded values fail closed.
 
+Design `tag_regex` to filter a release family rather than the currently selected immutable version. First inspect representative upstream tags, then keep the four decisions separate:
+
+1. `channel` defines stable, prerelease, nightly, or custom semantics.
+2. `tag_regex` includes candidates that may appear in future runs.
+3. `version_regex` plus `version_template` extracts and normalizes package SemVer when tag text is nonstandard.
+4. `sort` chooses the winning candidate.
+
+For example, to remain on the v2 release line, use `channel: stable`, `sort: semver`, and `tag_regex: '^v?2\.\d+\.\d+$'`. Do not use `tag_regex: '^2\.2\.0$'` after observing version 2.2.0: that immutable exact match excludes every future patch and minor release and is not an automatic update strategy. If the user explicitly wants an immutable one-version pin, state that future discovery is disabled. Exact filters such as `^latest$` are appropriate only for mutable channel names paired with digest comparison, or for that explicit no-update pin.
+
 Nightly mutable tags become deterministic SemVer values based on creation time and the configured target-platform digest.
 
 For a registry that exposes only a mutable tag such as `latest`, configure the image version source with `bump: patch`, plus `channel: custom`, `sort: created`, and an exact `tag_regex`. The Action compares the selected target-platform digest with the currently delivered digest. Equality preserves the current package version; a change increments only the stable SemVer patch component. Bump mode rejects prerelease/build package versions, `allow_downgrade: true`, `version_regex`, non-created rules, and unverified mirrors. Mutable direct/mirror references are digest-pinned; mutable mirrors require `require_digest_match: true`. Official publication still requires LazyCat delivery.
@@ -179,7 +188,7 @@ For agent-generated screenshots, use `agent-browser` to open the application at 
 
 Official lint does not turn every compatibility warning into a failure. Unknown `container_name` remains a visible warning; only official warnings block the official precheck, and an equal/newer online version skips before that precheck. Official HTTP failures keep the safe stage and status. The raw body is hidden, while a recognized JSON `message`, `msg`, string `error`, or nested `error.message`/`error.msg` may be displayed after one-line normalization, a 512-byte limit, and credential suppression.
 
-LazyCat developer-platform writes prefer a PAT in `LZC_API_TOKEN`. Existing callers may retain an lzc-cli session token in `LAZYCAT_TOKEN`; that path preserves the legacy developer endpoints and `X-User-Token` authentication. These variables are not aliases, and `LZC_API_TOKEN` wins when both are set. The reusable workflow passes them separately without creating, copying, or synchronizing GitHub Secrets. PAT production defaults are `LZC_API_HOST=appstore.api.lazycat.cloud` and `LZC_APPSTORE_COS_DOMAIN=dl.lazycat.cloud`; either domain may be overridden through its environment variable. Override values contain no scheme or path. Username/password login, `LZC_CLI_TOKEN`, and token files remain unsupported.
+LazyCat developer-platform writes use a PAT in `LZC_API_TOKEN` by default. New and generated callers must not map `LAZYCAT_TOKEN`. Retain `LAZYCAT_TOKEN` only for an existing caller that still depends on an lzc-cli session token and has not migrated to PAT authentication; that path preserves the legacy developer endpoints and `X-User-Token` authentication. These variables are not aliases, and both should not be mapped as a speculative fallback. The reusable workflow accepts them separately for backward compatibility without creating, copying, or synchronizing GitHub Secrets. PAT production defaults are `LZC_API_HOST=appstore.api.lazycat.cloud` and `LZC_APPSTORE_COS_DOMAIN=dl.lazycat.cloud`; either domain may be overridden through its environment variable. Override values contain no scheme or path. Username/password login, `LZC_CLI_TOKEN`, and token files remain unsupported.
 
 ## MiaoMiao private store
 

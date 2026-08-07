@@ -102,6 +102,30 @@
       "prompt": "Generate a caller-owned composite workflow that checks out the repository and configures Node without GitHub's Node.js 20 deprecation warning.",
       "mustInclude": ["Node.js 24", "actions/checkout@v7", "actions/setup-node@v7"],
       "mustNotInclude": ["actions/checkout@v4", "actions/setup-node@v4"]
+    },
+    {
+      "id": "pat-default-legacy-opt-in",
+      "prompt": "Generate official-store authentication for a new caller with a working LZC_API_TOKEN PAT. The repository also has an unused historical LAZYCAT_TOKEN secret.",
+      "mustInclude": ["LZC_API_TOKEN", "PAT", "legacy-only"],
+      "mustNotInclude": ["LAZYCAT_TOKEN: ${{ secrets.LAZYCAT_TOKEN }}", "map both", "secrets: inherit"]
+    },
+    {
+      "id": "evolvable-version-selection",
+      "prompt": "The current upstream image is 2.2.0. Generate a scheduled automatic update rule that will continue finding future stable releases instead of pinning the current tag.",
+      "mustInclude": ["release family", "channel: stable", "sort: semver", "tag_regex", "future"],
+      "mustNotInclude": ["tag_regex: '^2\\.2\\.0$'", "tag_regex: \"^2\\\\.2\\\\.0$\"", "pin 2.2.0"]
+    },
+    {
+      "id": "major-line-version-selection",
+      "prompt": "Track only stable v2 image releases. The current tag is v2.2.0, and later v2 patches and minors should update automatically while v3 must be ignored.",
+      "mustInclude": ["channel: stable", "sort: semver", "^v?2\\.\\d+\\.\\d+$", "future"],
+      "mustNotInclude": ["^v?2\\.2\\.0$", "include v3", "sort: created"]
+    },
+    {
+      "id": "tag-filter-version-mapping-separation",
+      "prompt": "Upstream tags look like release-20260807.03. Select the whole release family and map it to SemVer 20260807.3.0.",
+      "mustInclude": ["tag_regex", "version_regex", "(?P<version>", "(?P<build>", "version_template", "{version}.{build}.0"],
+      "mustNotInclude": ["tag_regex: '^release-20260807\\.03$'", "custom script", "current tag only"]
     }
   ]
 }

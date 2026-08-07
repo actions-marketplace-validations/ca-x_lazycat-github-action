@@ -127,6 +127,18 @@ Delivery policy:
 
 Set `require_digest_match: true` for mirrors when the accelerator must contain exactly the source image for `project.target_arch`.
 
+A version-discovery rule must match a release family that can produce future candidates. Inspect representative upstream tags before choosing the channel, filter, mapping, and sort. Do not generate an exact immutable SemVer filter such as `^2\.2\.0$`; it selects only the already-known version, so scheduled checks can never discover `2.2.1`, `2.3.0`, or another later release. Use these shapes instead:
+
+| Upstream intent | Configuration shape |
+|---|---|
+| Latest stable across all major versions | `channel: stable`; omit `tag_regex` when ordinary tags already parse as SemVer, or use `^v?\d+\.\d+\.\d+$` to exclude non-release aliases |
+| Latest stable within major version 2 | `channel: stable`, `sort: semver`, `tag_regex: '^v?2\.\d+\.\d+$'` |
+| Latest supported prerelease line | `channel: beta` plus a family regex that accepts future alpha/beta/rc/preview tags |
+| Custom tag prefix such as `release-2.3.4` | `tag_regex` selects the whole `release-...` family; `version_regex` extracts `(?P<version>...)`; `version_template` normalizes it |
+| Mutable channel name such as `latest` | exact `tag_regex: '^latest$'` plus digest comparison and `bump: patch` |
+
+`tag_regex` filters candidate tags; `version_regex` and `version_template` map a matched tag to package SemVer; `sort` decides which mapped candidate wins. Do not collapse these separate jobs into a regex for the current version. Exact tag filters are reserved for mutable channel names whose digest changes behind the same tag, or for an intentional one-version pin that the user explicitly wants. An immutable one-version pin is not an automatic update strategy; report that no future tag discovery will occur.
+
 When a tag needs normalization, reference named `version_regex` groups directly in `version_template`, for example `(?P<version>\d{8})\.0*(?P<build>[1-9]\d*)` with `{version}.{build}.0`. Keep the required `version` group. Unknown placeholders and non-SemVer results fail closed; do not add repository-specific rewriting when this mapping is sufficient.
 
 For large image repositories, `images[].max_tags` limits raw tag discovery (default `10000`, maximum `50000`) and `images[].max_matching_tags` limits the tags remaining after `tag_regex`/`exclude_regex` (default `10000`, maximum `50000`, never above `max_tags`). Keep defaults unless the upstream has a measured tag count above the default; do not raise an organization-wide limit. For SemVer sorting, rank filtered tag names before manifest inspection and stop after the first usable configured target; continue past a higher tag only when that tag lacks the target platform. `sort: updated` is an explicit Docker Hub-only mode: rank by tag `last_updated`, then mapped SemVer, then tag name, and inspect manifests in that order. Never substitute OCI `config.created` when Docker Hub update metadata is unavailable. Keep full manifest inspection for `created` sorting because the target image creation time is required for ranking.
@@ -163,6 +175,8 @@ Keep the maintained reusable workflow on the current major lines: `actions/check
 
 Set `build.run_buildscript: false` explicitly when `lzc-build.yml` has no `buildscript`; the Action default is `true`. For every publishing workflow, explicitly map each credential required by the enabled stores under the reusable job's `secrets:` block. Do not use only `secrets: inherit`: explicit mappings make missing repository authorization and Environment/Repository/Organization overrides reviewable. A public-image scheduled PR workflow with stores disabled should not receive unrelated repository Secrets.
 
+Use `LZC_API_TOKEN` as the default credential for new or regenerated callers. Do not map `LAZYCAT_TOKEN` by default. Include `LAZYCAT_TOKEN` only when an existing caller still depends on an lzc-cli session token and no PAT migration has been confirmed. Do not map both credentials as a generic fallback; once the PAT path is confirmed, remove the legacy mapping from generated examples and workflow updates. Keep the reusable workflow's optional `LAZYCAT_TOKEN` input for backward compatibility.
+
 For versioned Release assets, set the reusable workflow input exactly:
 
 ```yaml
@@ -184,7 +198,8 @@ Official publishing requires:
 - optional retry policy, defaulting to `retry.enabled: false`; when enabled, `max_attempts` includes the first attempt and `initial_delay`/`max_delay` use Go duration syntax;
 - only `lazycat` image delivery;
 - official lint compliance, including locales and icon size at most 200 KB;
-- preferred PAT in `LZC_API_TOKEN`, with protocol-preserving legacy lzc-cli session authentication through `LAZYCAT_TOKEN` and an optional `LZC_API_HOST` PAT API override.
+- preferred PAT in `LZC_API_TOKEN`, with an optional `LZC_API_HOST` PAT API override;
+- protocol-preserving legacy lzc-cli session authentication through `LAZYCAT_TOKEN` only for a confirmed legacy-only caller that has not migrated to a PAT.
 
 Automatic first information submission is optional and is enabled only when `stores.official.create_if_missing: true` plus at least one of `brief`, `description`, `keywords`, `support_pc: true`, `support_mobile: true`, `screenshot_pc_files`, or `screenshot_mobile_files` is configured. `language`, `name`, `source`, and `source_author` alone retain the legacy create-only behavior. Both support flags default to false. Use the authenticated developer API for exact first-submission state; never infer it from the anonymous public catalog. The supported states are missing application, incomplete information, approved information, and pending review. Approved information is preserved without re-uploading screenshots. A pending review must fail closed before LPK or screenshot upload.
 
@@ -250,6 +265,8 @@ Before finishing:
 | Symptom | First repair | Still failing |
 |---|---|---|
 | Wrong service image updated | Correct the explicit `service`; never infer it | STOP if the target is missing or duplicated |
+| Scheduled checks never discover a newer immutable release | Replace the exact current-version `tag_regex` with a release-family filter and the intended `semver`/`updated` sort | If the user truly wants one immutable tag, disable or describe automatic version discovery instead of pretending the pin will update |
+| A custom tag matches but maps to the wrong package version | Keep family selection in `tag_regex`; move extraction into a named-group `version_regex` and normalization into `version_template` | STOP if representative upstream tags cannot be mapped to valid SemVer without guessing |
 | Templated YAML does not parse | Protect supported standalone controls | STOP on invalid protected YAML or marker collision |
 | Control-line order/hash changed | Restore exact original control lines | STOP without writing if any marker is lost or duplicated |
 | Tracked-LPK inventory fails | Re-run `git ls-files '*.lpk'` and byte accounting | STOP; do not delete from an incomplete inventory |
@@ -282,3 +299,5 @@ Before finishing:
 - Do not expose Secret values in configuration, logs, outputs, summaries, or examples.
 - Do not print an official response body; only an explicitly sanitized JSON `message` may cross the error boundary.
 - Do not enable `allow_downgrade` merely to make a failing scheduled run green.
+- Do not generate `tag_regex` from the current package or image version, such as `^2\.2\.0$`, for an automatic update workflow.
+- Do not use `version_regex` as the candidate filter or `tag_regex` as a substitute for version mapping; keep filtering, mapping, and sorting separate.

@@ -92,19 +92,29 @@ jobs:
       PRIVATE_STORE_GROUP_CODES: ${{ secrets.PRIVATE_STORE_GROUP_CODES }}
 ```
 
-Use `update.strategy: publish`. Configure repository/organization secrets:
+Use `update.strategy: publish`. Configure only the repository/organization secrets required by enabled stores:
 
 ```text
-LZC_API_HOST
 LZC_API_TOKEN
-LAZYCAT_TOKEN (legacy fallback)
+LZC_API_HOST (optional PAT API override)
 APPSTORE_URL
 APPSTORE_TOKEN
-APP_ID
-PRIVATE_STORE_GROUP_CODES
+APP_ID (optional)
+PRIVATE_STORE_GROUP_CODES (optional)
 ```
 
-Configure a PAT in `LZC_API_TOKEN` for new LazyCat image-delivery or official-publishing callers. Existing callers may keep mapping their lzc-cli session token as `LAZYCAT_TOKEN`; the reusable workflow passes the variables separately so the Action preserves their authentication protocols. `LZC_API_TOKEN` wins when both are set. The workflow does not create, copy, or synchronize GitHub Secrets. `LZC_API_HOST` is an optional PAT API override. `APP_ID` is optional. `PRIVATE_STORE_GROUP_CODES` is an optional comma-separated GitHub Secret; never expose it as a normal workflow input.
+New and generated callers map `LZC_API_TOKEN` only for LazyCat image delivery or official publishing. Do not add `LAZYCAT_TOKEN` as a redundant fallback when a PAT is available or confirmed working. The workflow does not create, copy, or synchronize GitHub Secrets. `LZC_API_HOST` is an optional PAT API override. `APP_ID` is optional. `PRIVATE_STORE_GROUP_CODES` is an optional comma-separated GitHub Secret; never expose it as a normal workflow input.
+
+### Legacy-only compatibility
+
+Keep `LAZYCAT_TOKEN` only when an existing caller still has an lzc-cli session token and PAT migration is not yet available or authorized:
+
+```yaml
+secrets:
+  LAZYCAT_TOKEN: ${{ secrets.LAZYCAT_TOKEN }}
+```
+
+This is a compatibility exception, not a default example. Do not map both `LZC_API_TOKEN` and `LAZYCAT_TOKEN` for speculative fallback. After the PAT path is confirmed, keep only `LZC_API_TOKEN`. The reusable workflow continues to accept the legacy Secret separately so old callers do not break.
 
 Publishing callers must assign required Secrets explicitly. `secrets: inherit` alone is not sufficient documentation and can hide that an Organization Secret has not authorized a newly added repository.
 

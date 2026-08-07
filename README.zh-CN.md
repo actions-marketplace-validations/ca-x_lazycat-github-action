@@ -246,6 +246,8 @@ tag_regex: '^v?\d+\.\d+\.\d+$'
 exclude_regex: 'windows|arm64'
 ```
 
+筛选规则必须描述可持续增长的版本族，而不是当前看到的版本。例如只跟踪 v2 应使用 `tag_regex: '^v?2\.\d+\.\d+$'`；`tag_regex: '^2\.2\.0$'` 只会固定一个不可变标签，永远发现不了 2.2.1 或 2.3.0。精确筛选只适用于配合 digest 自增的 `latest` 等可变名称，或明确不需要自动更新的固定版本。候选筛选（`tag_regex`）、版本映射（`version_regex`/`version_template`）和排序（`sort`）必须分开设计。
+
 Beta 示例：
 
 ```yaml
@@ -691,6 +693,8 @@ workflow 使用 `toolchains: docker`。ARM64 Runner 的 Dockerfile 构建阶段�
 - [`go-exec`](examples/go-exec/.github/workflows/lazycat.yml) 和 [`rust-exec`](examples/rust-exec/.github/workflows/lazycat.yml)
 - [`typescript-static`](examples/typescript-static/.github/workflows/lazycat.yml) 和 [`typescript-exec`](examples/typescript-exec/.github/workflows/lazycat.yml)
 - [同时发布官方和私有商店](examples/stores/.github/workflows/lazycat.yml)
+
+示例默认不映射 `LAZYCAT_TOKEN`。新 caller 使用 `LZC_API_TOKEN`；只有尚未迁移 PAT、仍明确依赖 lzc-cli 会话 token 的历史 workflow 才添加旧 Secret。不要把两个凭据同时映射为通用 fallback。
 
 TypeScript Exec 示例要求锁文件中包含 `@yao-pkg/pkg`，并用 `node22-linux-x64` 演示默认的 `amd64` 目标。TypeScript 静态资源通常与 CPU 无关；Go、Rust、TypeScript Exec 和 Docker 构建必须遵循 `LAZYCAT_TARGET_ARCH`/`LAZYCAT_TARGET_PLATFORM`，选择 arm64 的项目需要匹配的工具链和打包运行时。
 

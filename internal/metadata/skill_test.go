@@ -114,6 +114,18 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 	if _, found := seen["node24-action-runtime"]; !found {
 		t.Fatal("evals are missing Node.js 24 Action runtime coverage")
 	}
+	if _, found := seen["pat-default-legacy-opt-in"]; !found {
+		t.Fatal("evals are missing PAT-default legacy-authentication coverage")
+	}
+	if _, found := seen["evolvable-version-selection"]; !found {
+		t.Fatal("evals are missing evolvable version-selection coverage")
+	}
+	if _, found := seen["major-line-version-selection"]; !found {
+		t.Fatal("evals are missing major-line version-selection coverage")
+	}
+	if _, found := seen["tag-filter-version-mapping-separation"]; !found {
+		t.Fatal("evals are missing tag-filter/version-mapping separation coverage")
+	}
 	for _, name := range []string{"references/configuration.md", "references/workflows.md", "assets/lazycat-action.yml"} {
 		data, err := os.ReadFile(filepath.Join(root, name))
 		if err != nil {
@@ -262,8 +274,8 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 	if err := json.Unmarshal(prompts, &promptCases); err != nil {
 		t.Fatal(err)
 	}
-	if len(promptCases) != 16 {
-		t.Fatalf("test-prompts.json cases=%d, want 16", len(promptCases))
+	if len(promptCases) != 20 {
+		t.Fatalf("test-prompts.json cases=%d, want 20", len(promptCases))
 	}
 	promptIDs := make(map[string]string, len(promptCases))
 	for _, prompt := range promptCases {
@@ -276,18 +288,22 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 		promptIDs[prompt.ID] = prompt.Expected
 	}
 	for id, required := range map[string][]string{
-		"historical-lpk-migration":             {"git ls-files '*.lpk'", "总字节", "yes/no", "拒绝", "versioned-release-asset: true", "<package-id>-v<version>.lpk"},
-		"go-template-manifest-preservation":    {"绝不执行或求值", "if/else/end/with/range", "逐字节", "fail closed"},
-		"release-store-reconciliation":         {"精确命名", "GitHub sha256 digest", "本地 SHA256", "官方商店补交", "喵喵商店", "独立跳过", "不重建", "不改名", "不猜测"},
-		"official-file-upload-stage":           {"本地 LPK 文件", "multipart", "store.official.upload", "store.official.review", "不得打印"},
-		"named-version-template-groups":        {"version", "build", "{version}.{build}.0", "20260603.1.0", "fail closed"},
-		"private-name-fallback":                {"stores.private.name", "packageId", "应用名称", "/api/v1/apps/by-name", "404", "停止"},
-		"image-version-downgrade-guard":        {"allow_downgrade: false", "SemVer", "VERSION_DOWNGRADE_BLOCKED", "同版本", "明确确认"},
-		"rust-protobuf-toolchain":              {"Edition 2023", "GitHub Release", "SHA256", "protoc --version", "共享 buildscript", "不得把 Proto 改成 proto3", "不得修改 Rust 源码", "build.rs"},
-		"store-online-version-downgrade-guard": {"allow_downgrade: false", "SemVer", "7.8.138", "7.7.406", "online-version-newer", "version-already-online", "non-SemVer", "独立"},
-		"official-retry-and-failure-isolation": {"enabled: false", "max_attempts", "initial_delay", "max_delay", "429", "5xx", "审核网络错误或 5xx 不重放", "400", "双商店", "warning", "官方唯一目标", "message"},
-		"updated-tag-and-target-architecture":  {"sort: updated", "last_updated", "v1.2.15", "v1.2.26", "target_arch", "amd64", "arm64", "allow_downgrade: false"},
-		"node24-action-runtime":                {"Node.js 24", "actions/checkout@v7", "actions/setup-node@v7", "不得生成", "@v4"},
+		"historical-lpk-migration":              {"git ls-files '*.lpk'", "总字节", "yes/no", "拒绝", "versioned-release-asset: true", "<package-id>-v<version>.lpk"},
+		"go-template-manifest-preservation":     {"绝不执行或求值", "if/else/end/with/range", "逐字节", "fail closed"},
+		"release-store-reconciliation":          {"精确命名", "GitHub sha256 digest", "本地 SHA256", "官方商店补交", "喵喵商店", "独立跳过", "不重建", "不改名", "不猜测"},
+		"official-file-upload-stage":            {"本地 LPK 文件", "multipart", "store.official.upload", "store.official.review", "不得打印"},
+		"named-version-template-groups":         {"version", "build", "{version}.{build}.0", "20260603.1.0", "fail closed"},
+		"private-name-fallback":                 {"stores.private.name", "packageId", "应用名称", "/api/v1/apps/by-name", "404", "停止"},
+		"image-version-downgrade-guard":         {"allow_downgrade: false", "SemVer", "VERSION_DOWNGRADE_BLOCKED", "同版本", "明确确认"},
+		"rust-protobuf-toolchain":               {"Edition 2023", "GitHub Release", "SHA256", "protoc --version", "共享 buildscript", "不得把 Proto 改成 proto3", "不得修改 Rust 源码", "build.rs"},
+		"store-online-version-downgrade-guard":  {"allow_downgrade: false", "SemVer", "7.8.138", "7.7.406", "online-version-newer", "version-already-online", "non-SemVer", "独立"},
+		"official-retry-and-failure-isolation":  {"enabled: false", "max_attempts", "initial_delay", "max_delay", "429", "5xx", "审核网络错误或 5xx 不重放", "400", "双商店", "warning", "官方唯一目标", "message"},
+		"updated-tag-and-target-architecture":   {"sort: updated", "last_updated", "v1.2.15", "v1.2.26", "target_arch", "amd64", "arm64", "allow_downgrade: false"},
+		"node24-action-runtime":                 {"Node.js 24", "actions/checkout@v7", "actions/setup-node@v7", "不得生成", "@v4"},
+		"pat-default-legacy-opt-in":             {"LZC_API_TOKEN", "默认", "LAZYCAT_TOKEN", "仅", "lzc-cli 会话", "不得同时映射"},
+		"evolvable-version-selection":           {"tag_regex", "标签族", "2.x", "version_regex", "sort", "latest", "不得", "^2\\.2\\.0$"},
+		"major-line-version-selection":          {"v2", "^v?2\\.\\d+\\.\\d+$", "semver", "未来", "2.2.0"},
+		"tag-filter-version-mapping-separation": {"tag_regex", "version_regex", "(?P<version>", "version_template", "筛选", "映射"},
 	} {
 		expected, found := promptIDs[id]
 		if !found {
@@ -298,6 +314,76 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 				t.Fatalf("test prompt %q expected result missing %q", id, value)
 			}
 		}
+	}
+	for _, required := range []string{
+		"Do not map `LAZYCAT_TOKEN` by default",
+		"existing caller still depends on an lzc-cli session token",
+		"Do not map both credentials as a generic fallback",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("SKILL.md missing PAT-default authentication rule %q", required)
+		}
+	}
+	for _, required := range []string{
+		"A version-discovery rule must match a release family",
+		"Do not generate an exact immutable SemVer filter such as `^2\\.2\\.0$`",
+		"Exact tag filters are reserved for mutable channel names",
+		"intentional one-version pin",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("SKILL.md missing evolvable version-selection rule %q", required)
+		}
+	}
+	configurationText := string(configuration)
+	for _, required := range []string{
+		"filter a release family rather than the currently selected immutable version",
+		"^v?2\\.\\d+\\.\\d+$",
+		"not an automatic update strategy",
+	} {
+		if !strings.Contains(configurationText, required) {
+			t.Fatalf("configuration reference missing evolvable version-selection rule %q", required)
+		}
+	}
+	workflowReference := string(workflow)
+	for _, required := range []string{
+		"New and generated callers map `LZC_API_TOKEN` only",
+		"Do not add `LAZYCAT_TOKEN` as a redundant fallback",
+		"Legacy-only compatibility",
+	} {
+		if !strings.Contains(workflowReference, required) {
+			t.Fatalf("workflow reference missing PAT-default authentication rule %q", required)
+		}
+	}
+	starterText := string(starter)
+	if strings.Contains(starterText, "LAZYCAT_TOKEN") {
+		t.Fatal("workflow starter must not mention or map LAZYCAT_TOKEN")
+	}
+	exampleWorkflows, err := filepath.Glob(filepath.Join("..", "..", "examples", "*", ".github", "workflows", "*.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exampleWorkflows) == 0 {
+		t.Fatal("no example workflows found")
+	}
+	for _, filename := range exampleWorkflows {
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			t.Fatal(err)
+		}
+		example := string(data)
+		if strings.Contains(example, "secrets: inherit") {
+			t.Fatalf("%s must explicitly map only required secrets", filename)
+		}
+		if strings.Contains(example, "LAZYCAT_TOKEN:") {
+			t.Fatalf("%s must not map legacy LAZYCAT_TOKEN by default", filename)
+		}
+	}
+	storesExample, err := os.ReadFile(filepath.Join("..", "..", "examples", "stores", ".github", "workflows", "lazycat.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(storesExample), "LZC_API_TOKEN: ${{ secrets.LZC_API_TOKEN }}") {
+		t.Fatal("stores example must map the preferred LZC_API_TOKEN PAT")
 	}
 	reusableWorkflow, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "lazycat.yml"))
 	if err != nil {

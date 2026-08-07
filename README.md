@@ -246,6 +246,8 @@ tag_regex: '^v?\d+\.\d+\.\d+$'
 exclude_regex: 'windows|arm64'
 ```
 
+The filter must describe an evolving release family, not the currently observed version. For example, staying on v2 uses `tag_regex: '^v?2\.\d+\.\d+$'`; `tag_regex: '^2\.2\.0$'` pins one immutable tag and will never discover 2.2.1 or 2.3.0. Use an exact filter only for a mutable name such as `latest` with digest-based bumping, or when no automatic version updates are intentionally desired. Keep candidate filtering (`tag_regex`), version mapping (`version_regex`/`version_template`), and ordering (`sort`) separate.
+
 Beta example:
 
 ```yaml
@@ -695,6 +697,8 @@ Complete copyable files are under [`examples/`](examples/):
 - [`go-exec`](examples/go-exec/.github/workflows/lazycat.yml) and [`rust-exec`](examples/rust-exec/.github/workflows/lazycat.yml)
 - [`typescript-static`](examples/typescript-static/.github/workflows/lazycat.yml) and [`typescript-exec`](examples/typescript-exec/.github/workflows/lazycat.yml)
 - [official and private stores together](examples/stores/.github/workflows/lazycat.yml)
+
+The examples do not map `LAZYCAT_TOKEN` by default. New callers use `LZC_API_TOKEN`; add the legacy Secret only when an existing workflow still depends on an lzc-cli session token and has not migrated to PAT authentication. Do not map both credentials as a generic fallback.
 
 The TypeScript Exec example expects `@yao-pkg/pkg` in the committed lockfile and demonstrates the default `amd64` target with `node22-linux-x64`. TypeScript static assets are architecture-neutral. Go, Rust, TypeScript Exec, and Docker builds must honor `LAZYCAT_TARGET_ARCH`/`LAZYCAT_TARGET_PLATFORM`; projects opting into arm64 need matching toolchains and packaged runtimes.
 

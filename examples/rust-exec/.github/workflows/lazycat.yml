@@ -13,4 +13,3 @@ jobs:
       config: .github/lazycat-action.yml
       toolchains: rust
       rust-toolchain: stable
-    secrets: inherit

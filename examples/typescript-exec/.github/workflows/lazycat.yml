@@ -14,4 +14,3 @@ jobs:
       toolchains: node
       node-version: 22.x
       node-package-manager: npm
-    secrets: inherit

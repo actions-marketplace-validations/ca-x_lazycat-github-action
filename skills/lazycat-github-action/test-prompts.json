@@ -78,5 +78,25 @@
     "id": "node24-action-runtime",
     "prompt": "我用 composite Action 自己写 checkout 和 Node setup，GitHub 提示 Node.js 20 已弃用。请更新生成规则。",
     "expected": "说明官方 JavaScript Actions 必须使用 Node.js 24 兼容主版本：actions/checkout@v7 和 actions/setup-node@v7；生成或更新 caller-owned workflow 时不得生成 checkout/setup-node @v4。"
+  },
+  {
+    "id": "pat-default-legacy-opt-in",
+    "prompt": "新项目已经配置并验证了 LZC_API_TOKEN PAT，仓库里还残留一个旧的 LAZYCAT_TOKEN Secret。请生成官方商店发布 workflow 的 Secret 映射。",
+    "expected": "默认只映射 LZC_API_TOKEN；LAZYCAT_TOKEN 仅用于尚未迁移 PAT、仍明确依赖 lzc-cli 会话认证的历史 caller；不得同时映射两个凭据作为通用 fallback，也不得使用 secrets: inherit 无差别传递。"
+  },
+  {
+    "id": "evolvable-version-selection",
+    "prompt": "上游镜像当前版本是 2.2.0，请生成定时自动获取后续稳定版本的规则，不要让它锁死在当前版本。",
+    "expected": "先识别上游标签族，再选择 stable channel 和 semver sort；tag_regex 必须匹配未来版本族，不得写成 ^2\\.2\\.0$。如果跟踪所有稳定版本可省略正则或使用通用 SemVer 族；如果只跟踪 2.x，则使用 ^v?2\\.\\d+\\.\\d+$。version_regex 仅用于非标准标签映射；只有 latest 等可变标签才使用精确 tag_regex 并配合 digest/bump。"
+  },
+  {
+    "id": "major-line-version-selection",
+    "prompt": "应用现在使用 v2.2.0，只允许自动升级 v2 的 patch/minor，不能进入 v3。版本筛选怎么写？",
+    "expected": "使用 channel: stable、sort: semver 和可持续匹配未来 v2 版本的 tag_regex: '^v?2\\.\\d+\\.\\d+$'；当前 2.2.0 只是候选之一，不能生成精确固定正则。说明该规则会选择未来最高 v2 SemVer并排除 v3。"
+  },
+  {
+    "id": "tag-filter-version-mapping-separation",
+    "prompt": "上游标签是 release-20260807.03，后续会持续发布同格式标签。请映射为 20260807.3.0 并自动选择最新版本。",
+    "expected": "tag_regex 筛选整个 release- 日期.构建号标签族；version_regex 使用 (?P<version>...) 和 (?P<build>...) 命名捕获组；version_template 使用 {version}.{build}.0；sort 负责选择最新候选。不得把当前 release-20260807.03 写成精确固定筛选，也不得用仓库专用脚本代替映射。"
   }
 ]
