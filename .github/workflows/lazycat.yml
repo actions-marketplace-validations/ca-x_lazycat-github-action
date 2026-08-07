@@ -418,10 +418,6 @@ jobs:
               core.setOutput('should-release', process.env.LPK_PATH ? 'true' : 'false');
               return;
             }
-            if (process.env.UPDATE_STRATEGY === 'publish' && process.env.CHANGED === 'true') {
-              core.setOutput('should-release', process.env.LPK_PATH ? 'true' : 'false');
-              return;
-            }
             if (process.env.UPDATE_STRATEGY === 'publish' && process.env.DRY_RUN !== 'true' && context.eventName !== 'pull_request') {
               const packageId = process.env.PACKAGE_ID;
               const version = process.env.VERSION;
@@ -559,21 +555,33 @@ jobs:
             echo "${delimiter}"
           } >>"${GITHUB_OUTPUT}"
 
-      - name: Validate existing Release tag target
-        if: steps.release-state.outputs.should-release == 'true' && github.ref_type != 'tag' && github.event_name != 'release'
+      - name: Check remote Release tag
+        id: release-tag
+        if: steps.release-state.outputs.should-release == 'true'
         shell: bash
         env:
           RELEASE_TAG: ${{ steps.lazycat.outputs.tag }}
         run: |
           set -euo pipefail
-          if git show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"; then
-            tag_commit="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
-            head_commit="$(git rev-parse HEAD)"
-            if [[ "${tag_commit}" != "${head_commit}" ]]; then
-              echo "existing tag ${RELEASE_TAG} points to ${tag_commit}, expected ${head_commit}" >&2
-              exit 1
-            fi
+          tag_ref="refs/tags/${RELEASE_TAG}"
+          if ! git check-ref-format "${tag_ref}"; then
+            echo "invalid Release tag ${RELEASE_TAG}" >&2
+            exit 1
           fi
+          if git ls-remote --exit-code --refs origin "${tag_ref}" >/dev/null; then
+            echo "Remote Release tag ${RELEASE_TAG} already exists; reusing it."
+            echo "exists=true" >>"${GITHUB_OUTPUT}"
+            exit 0
+          else
+            status=$?
+          fi
+          if [[ "${status}" -eq 2 ]]; then
+            echo "Remote Release tag ${RELEASE_TAG} does not exist; the Release step may create it."
+            echo "exists=false" >>"${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "Failed to inspect remote Release tag ${RELEASE_TAG}" >&2
+          exit "${status}"
 
       - name: Inspect existing Release Asset
         id: asset-check
@@ -622,7 +630,7 @@ jobs:
           tag_name: ${{ steps.lazycat.outputs.tag }}
           name: ${{ steps.lazycat.outputs.tag }}
           body: ${{ inputs.changelog }}
-          target_commitish: ${{ steps.direct-commit.outputs.commit != '' && steps.direct-commit.outputs.commit || github.sha }}
+          target_commitish: ${{ steps.release-tag.outputs.exists != 'true' && (steps.direct-commit.outputs.commit != '' && steps.direct-commit.outputs.commit || github.sha) || '' }}
           files: ${{ steps.release-asset.outputs.lpk-path }}
           fail_on_unmatched_files: true
 

@@ -374,8 +374,8 @@ func TestActionMetadataExposesStableContract(t *testing.T) {
 	if document.Runs.Using != "composite" {
 		t.Fatalf("runs.using=%q", document.Runs.Using)
 	}
-	if got := actionBootstrapVersion(t); got != "v1.2.2" {
-		t.Fatalf("action.yml bootstrap version=%q, want v1.2.2", got)
+	if got := actionBootstrapVersion(t); got != "v1.2.3" {
+		t.Fatalf("action.yml bootstrap version=%q, want v1.2.3", got)
 	}
 }
 
@@ -462,6 +462,73 @@ func TestReusableWorkflowRecoversStalePublishRerunsAndRetriesReleaseReads(t *tes
 		if !strings.Contains(step, "retries: 3") {
 			t.Fatalf("safe Release read step %q must retry transient GitHub 5xx responses", name)
 		}
+	}
+}
+
+func TestReusableWorkflowSkipsExistingRemoteReleaseTag(t *testing.T) {
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
+	work := filepath.Join(root, "work")
+
+	runGit(t, root, "init", "--bare", remote)
+	runGit(t, root, "init", "-b", "main", work)
+	runGit(t, work, "config", "user.name", "Test User")
+	runGit(t, work, "config", "user.email", "test@example.com")
+	writeTestFile(t, filepath.Join(work, "package.yml"), "version: 1.3.3\n")
+	runGit(t, work, "add", "package.yml")
+	runGit(t, work, "commit", "-m", "release")
+	runGit(t, work, "tag", "v1.3.3")
+	runGit(t, work, "remote", "add", "origin", remote)
+	runGit(t, work, "push", "origin", "main", "refs/tags/v1.3.3")
+	writeTestFile(t, filepath.Join(work, "README.md"), "later commit\n")
+	runGit(t, work, "add", "README.md")
+	runGit(t, work, "commit", "-m", "later")
+	runGit(t, work, "push", "origin", "main")
+
+	script := reusableWorkflowRunScript(t, "Check remote Release tag")
+	for _, test := range []struct {
+		name string
+		tag  string
+		want string
+	}{
+		{name: "existing tag on older commit", tag: "v1.3.3", want: "exists=true"},
+		{name: "missing tag", tag: "v1.3.4", want: "exists=false"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			outputFile := filepath.Join(t.TempDir(), "github-output")
+			command := exec.Command("bash", "-c", script)
+			command.Dir = work
+			command.Env = append(os.Environ(),
+				"RELEASE_TAG="+test.tag,
+				"GITHUB_OUTPUT="+outputFile,
+			)
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("check remote Release tag: %v\n%s", err, output)
+			}
+			output, err := os.ReadFile(outputFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.TrimSpace(string(output)); got != test.want {
+				t.Fatalf("tag check output=%q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestReusableWorkflowReusesPublishedVersionInsteadOfRebuildingIt(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "lazycat.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := string(data)
+	classifyStep := workflowStep(t, workflow, "Classify Release work")
+	if strings.Contains(classifyStep, "process.env.UPDATE_STRATEGY === 'publish' && process.env.CHANGED === 'true'") {
+		t.Fatal("changed publish runs must inspect the existing Release asset before scheduling Release work")
+	}
+	uploadStep := workflowStep(t, workflow, "Upload GitHub Release Asset")
+	if !strings.Contains(uploadStep, "steps.release-tag.outputs.exists != 'true'") {
+		t.Fatal("Release creation must omit a new target commit when the remote tag already exists")
 	}
 }
 
