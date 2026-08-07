@@ -18,9 +18,24 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
-const maxTags = 10000
+const (
+	defaultMaxTags         = 10000
+	defaultMaxMatchingTags = 10000
+)
 
 var ErrPlatformNotFound = errors.New("target image platform not found")
+
+type publicError struct {
+	detail string
+}
+
+func (err publicError) Error() string {
+	return err.detail
+}
+
+func (err publicError) PublicErrorDetail() string {
+	return err.detail
+}
 
 type Image struct {
 	Reference string    `json:"reference"`
@@ -35,10 +50,12 @@ type Client struct {
 }
 
 type TagFilter struct {
-	Include     *regexp.Regexp
-	Exclude     *regexp.Regexp
-	SemVerRule  *versioning.Rule
-	UpdatedRule *versioning.Rule
+	Include         *regexp.Regexp
+	Exclude         *regexp.Regexp
+	SemVerRule      *versioning.Rule
+	UpdatedRule     *versioning.Rule
+	MaxTags         int
+	MaxMatchingTags int
 }
 
 func New(options ...remote.Option) *Client {
@@ -68,27 +85,25 @@ func (client *Client) CandidatesForTarget(ctx context.Context, source string, ta
 	if err != nil {
 		return nil, fmt.Errorf("parse image repository %q: %w", source, err)
 	}
-	tags, err := remote.List(repository, client.remoteOptions(ctx, target)...)
-	if err != nil {
-		return nil, fmt.Errorf("list image tags for %q: %w", source, err)
-	}
-	if len(tags) > maxTags {
-		return nil, fmt.Errorf("image repository %q returned %d tags; limit is %d", source, len(tags), maxTags)
-	}
-	sort.Strings(tags)
 	var filter TagFilter
 	if len(filters) > 0 {
 		filter = filters[0]
 	}
-	eligibleTags := make([]string, 0, len(tags))
-	for _, tag := range tags {
-		if filter.Include != nil && !filter.Include.MatchString(tag) {
-			continue
-		}
-		if filter.Exclude != nil && filter.Exclude.MatchString(tag) {
-			continue
-		}
-		eligibleTags = append(eligibleTags, tag)
+	tags, err := remote.List(repository, client.remoteOptions(ctx, target)...)
+	if err != nil {
+		return nil, fmt.Errorf("list image tags for %q: %w", source, err)
+	}
+	maxTags := filter.MaxTags
+	if maxTags == 0 {
+		maxTags = defaultMaxTags
+	}
+	if len(tags) > maxTags {
+		return nil, publicError{detail: fmt.Sprintf("image repository returned %d tags; raw limit is %d", len(tags), maxTags)}
+	}
+	sort.Strings(tags)
+	eligibleTags, err := filterTags(source, tags, filter)
+	if err != nil {
+		return nil, err
 	}
 	if filter.SemVerRule != nil {
 		tagCandidates := make([]versioning.Candidate, 0, len(eligibleTags))
@@ -124,7 +139,7 @@ func (client *Client) CandidatesForTarget(ctx context.Context, source string, ta
 	}
 	if filter.UpdatedRule != nil {
 		metadata := clientTagMetadata(client)
-		updates, err := metadata.Updates(ctx, repository, eligibleTags)
+		updates, err := metadata.Updates(ctx, repository, eligibleTags, matchingTagLimit(filter))
 		if err != nil {
 			return nil, fmt.Errorf("read image tag update times for %q: %w", source, err)
 		}
@@ -178,6 +193,31 @@ func (client *Client) CandidatesForTarget(ctx context.Context, source string, ta
 		return nil, fmt.Errorf("%w for repository %q", ErrPlatformNotFound, source)
 	}
 	return candidates, nil
+}
+
+func filterTags(source string, tags []string, filter TagFilter) ([]string, error) {
+	eligibleTags := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		if filter.Include != nil && !filter.Include.MatchString(tag) {
+			continue
+		}
+		if filter.Exclude != nil && filter.Exclude.MatchString(tag) {
+			continue
+		}
+		eligibleTags = append(eligibleTags, tag)
+	}
+	maxMatchingTags := matchingTagLimit(filter)
+	if len(eligibleTags) > maxMatchingTags {
+		return nil, publicError{detail: fmt.Sprintf("image repository has %d tags matching the configured filter; limit is %d", len(eligibleTags), maxMatchingTags)}
+	}
+	return eligibleTags, nil
+}
+
+func matchingTagLimit(filter TagFilter) int {
+	if filter.MaxMatchingTags > 0 {
+		return filter.MaxMatchingTags
+	}
+	return defaultMaxMatchingTags
 }
 
 func clientTagMetadata(client *Client) tagMetadata {

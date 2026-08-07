@@ -42,7 +42,7 @@ func TestDockerHubTagMetadataReadsPaginatedUpdateTimes(t *testing.T) {
 		t.Fatal(err)
 	}
 	metadata := dockerHubTagMetadata{client: server.Client(), baseURL: server.URL, pageSize: 1}
-	updates, err := metadata.Updates(context.Background(), repository, []string{"v1.2.15", "v1.2.26"})
+	updates, err := metadata.Updates(context.Background(), repository, []string{"v1.2.15", "v1.2.26"}, defaultMaxMatchingTags)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestDockerHubTagMetadataFailsClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Run("unsupported registry", func(t *testing.T) {
-		_, err := (dockerHubTagMetadata{}).Updates(context.Background(), otherRepository, []string{"v1"})
+		_, err := (dockerHubTagMetadata{}).Updates(context.Background(), otherRepository, []string{"v1"}, defaultMaxMatchingTags)
 		if err == nil || !strings.Contains(err.Error(), "only for Docker Hub") {
 			t.Fatalf("err=%v", err)
 		}
@@ -72,7 +72,7 @@ func TestDockerHubTagMetadataFailsClosed(t *testing.T) {
 	t.Run("cancelled", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		_, err := (dockerHubTagMetadata{}).Updates(ctx, dockerRepository, []string{"v1"})
+		_, err := (dockerHubTagMetadata{}).Updates(ctx, dockerRepository, []string{"v1"}, defaultMaxMatchingTags)
 		if err == nil || !errors.Is(err, context.Canceled) {
 			t.Fatalf("err=%v", err)
 		}
@@ -95,7 +95,7 @@ func TestDockerHubTagMetadataFailsClosed(t *testing.T) {
 				fmt.Fprint(writer, test.body)
 			}))
 			defer server.Close()
-			_, err := (dockerHubTagMetadata{client: server.Client(), baseURL: server.URL}).Updates(context.Background(), dockerRepository, []string{"v1"})
+			_, err := (dockerHubTagMetadata{client: server.Client(), baseURL: server.URL}).Updates(context.Background(), dockerRepository, []string{"v1"}, defaultMaxMatchingTags)
 			if err == nil || !strings.Contains(err.Error(), test.wantText) {
 				t.Fatalf("err=%v", err)
 			}
@@ -109,7 +109,7 @@ func TestDockerHubTagMetadataFailsClosed(t *testing.T) {
 			fmt.Fprint(writer, strings.Repeat("x", maxDockerHubBodyBytes+1))
 		}))
 		defer server.Close()
-		_, err := (dockerHubTagMetadata{client: server.Client(), baseURL: server.URL}).Updates(context.Background(), dockerRepository, []string{"v1"})
+		_, err := (dockerHubTagMetadata{client: server.Client(), baseURL: server.URL}).Updates(context.Background(), dockerRepository, []string{"v1"}, defaultMaxMatchingTags)
 		if err == nil || !strings.Contains(err.Error(), "exceeds") {
 			t.Fatalf("err=%v", err)
 		}
@@ -147,7 +147,7 @@ func TestCandidatesInspectsUpdatedTagsUntilPlatformMatches(t *testing.T) {
 
 type staticTagMetadata map[string]time.Time
 
-func (metadata staticTagMetadata) Updates(_ context.Context, _ name.Repository, tags []string) (map[string]time.Time, error) {
+func (metadata staticTagMetadata) Updates(_ context.Context, _ name.Repository, tags []string, _ int) (map[string]time.Time, error) {
 	updates := make(map[string]time.Time, len(tags))
 	for _, tag := range tags {
 		updates[tag] = metadata[tag]

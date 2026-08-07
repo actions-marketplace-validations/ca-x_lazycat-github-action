@@ -23,7 +23,7 @@ const (
 )
 
 type tagMetadata interface {
-	Updates(context.Context, name.Repository, []string) (map[string]time.Time, error)
+	Updates(context.Context, name.Repository, []string, int) (map[string]time.Time, error)
 }
 
 type dockerHubTagMetadata struct {
@@ -42,7 +42,7 @@ type dockerHubTagResult struct {
 	LastUpdated time.Time `json:"last_updated"`
 }
 
-func (metadata dockerHubTagMetadata) Updates(ctx context.Context, repository name.Repository, tags []string) (map[string]time.Time, error) {
+func (metadata dockerHubTagMetadata) Updates(ctx context.Context, repository name.Repository, tags []string, maxTags int) (map[string]time.Time, error) {
 	if ctx == nil {
 		return nil, errors.New("docker hub metadata context is required")
 	}

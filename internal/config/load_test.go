@@ -55,6 +55,60 @@ update:
 			},
 		},
 		{
+			name: "image tag limit is retained",
+			yaml: `version: 1
+project: {}
+update:
+  version_source:
+    type: git
+images:
+  - id: web
+    target: service
+    service: web
+    source: ghcr.io/acme/web
+    max_tags: 20000
+    max_matching_tags: 500
+`,
+			check: func(t *testing.T, got config.Config) {
+				if got.Images[0].MaxTags != 20000 || got.Images[0].MaxMatchingTags != 500 {
+					t.Fatalf("limits=%#v", got.Images[0])
+				}
+			},
+		},
+		{
+			name: "matching image tag limit exceeds raw limit",
+			yaml: `version: 1
+project: {}
+update:
+  version_source:
+    type: git
+images:
+  - id: web
+    target: service
+    service: web
+    source: ghcr.io/acme/web
+    max_tags: 10000
+    max_matching_tags: 10001
+`,
+			wantErr: "max_matching_tags must not exceed max_tags",
+		},
+		{
+			name: "image tag limit exceeds cap",
+			yaml: `version: 1
+project: {}
+update:
+  version_source:
+    type: git
+images:
+  - id: web
+    target: service
+    service: web
+    source: ghcr.io/acme/web
+    max_tags: 50001
+`,
+			wantErr: "max_tags must be between 1 and 50000",
+		},
+		{
 			name: "official retry values are retained",
 			yaml: `version: 1
 project: {}

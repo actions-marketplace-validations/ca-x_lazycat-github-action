@@ -37,8 +37,8 @@ jobs:
             exit 1
           fi
           for workflow_ref in "${workflow_refs[@]}"; do
-            if [[ "${workflow_ref}" != "${RELEASE_TAG}" ]]; then
-              echo ".github/workflows/lazycat.yml Action ref ${workflow_ref} must equal release tag ${RELEASE_TAG}" >&2
+            if [[ "${workflow_ref}" != "v1" ]]; then
+              echo ".github/workflows/lazycat.yml Action ref ${workflow_ref} must use the floating v1 tag" >&2
               exit 1
             fi
           done

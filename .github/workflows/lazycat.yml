@@ -281,7 +281,7 @@ jobs:
 
       - name: Run LazyCat automation
         id: lazycat
-        uses: ca-x/lazycat-github-action@v1.2.1
+        uses: ca-x/lazycat-github-action@v1
         env:
           LZC_API_HOST: ${{ secrets.LZC_API_HOST }}
           LZC_API_TOKEN: ${{ secrets.LZC_API_TOKEN }}
@@ -470,7 +470,7 @@ jobs:
       - name: Build missing Release artifact
         id: recovery-build
         if: steps.release-state.outputs.should-release == 'true' && steps.lazycat.outputs.lpk-path == '' && !inputs.dry-run
-        uses: ca-x/lazycat-github-action@v1.2.1
+        uses: ca-x/lazycat-github-action@v1
         env:
           LZC_API_HOST: ${{ secrets.LZC_API_HOST }}
           LZC_API_TOKEN: ${{ secrets.LZC_API_TOKEN }}
@@ -752,7 +752,7 @@ jobs:
       - name: Publish to MiaoMiao private store
         id: publish-private
         if: steps.lazycat.outputs.update-strategy == 'publish' && steps.lazycat.outputs.private-store-enabled == 'true' && steps.store-artifact.outputs.download-url != '' && !inputs.dry-run
-        uses: ca-x/lazycat-github-action@v1.2.1
+        uses: ca-x/lazycat-github-action@v1
         env:
           APPSTORE_URL: ${{ secrets.APPSTORE_URL }}
           APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
@@ -771,7 +771,7 @@ jobs:
         id: publish-official
         if: ${{ !cancelled() && steps.lazycat.outputs.update-strategy == 'publish' && steps.lazycat.outputs.official-store-enabled == 'true' && steps.store-artifact.outputs.download-url != '' && !inputs.dry-run }}
         continue-on-error: true
-        uses: ca-x/lazycat-github-action@v1.2.1
+        uses: ca-x/lazycat-github-action@v1
         env:
           LZC_API_HOST: ${{ secrets.LZC_API_HOST }}
           LZC_API_TOKEN: ${{ secrets.LZC_API_TOKEN }}

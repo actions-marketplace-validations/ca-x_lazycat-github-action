@@ -326,7 +326,7 @@ version_template: '{version}.{build}.0' # 20260603.01 -> 20260603.1.0
 
 `version` 捕获组仍然必填。未知占位符或展开后不是合法 SemVer 时会直接失败。
 
-镜像仓库发现使用 `github.com/google/go-containerregistry`。Action 会先应用 `tag_regex` 和 `exclude_regex`。SemVer 排序先按标签排名；`updated` 先按 Docker Hub 标签元数据排名，两者都按顺序检查 manifest，找到第一个可用的项目目标平台就停止。按创建时间排序因为目标镜像时间参与排名，仍必须检查全部候选 manifest。OCI index 和 Docker manifest list 只选择 `project.target_arch` 对应平台。默认降级保护可以防止旧版本映射静默降低应用版本。
+镜像仓库发现使用 `github.com/google/go-containerregistry`。Action 会先应用 `tag_regex` 和 `exclude_regex`。`max_tags` 限制 Registry 返回的原始标签列表，默认 `10000`；仅在已知的大型上游仓库中按镜像显式提高，最大 `50000`。`max_matching_tags` 独立限制筛选后的候选数，默认也是 `10000`，且不得超过 `max_tags`。SemVer 排序先按标签排名；`updated` 先按 Docker Hub 标签元数据排名，两者都按顺序检查 manifest，找到第一个可用的项目目标平台就停止。按创建时间排序因为目标镜像时间参与排名，仍必须检查全部候选 manifest。OCI index 和 Docker manifest list 只选择 `project.target_arch` 对应平台。默认降级保护可以防止旧版本映射静默降低应用版本。
 
 ## 镜像交付模式
 

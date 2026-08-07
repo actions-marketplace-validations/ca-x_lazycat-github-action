@@ -92,7 +92,6 @@ func TestReusableWorkflowContractAndActionRefs(t *testing.T) {
 			t.Fatalf("workflow permission %q=%#v, want write", name, got)
 		}
 	}
-	actionVersion := actionBootstrapVersion(t)
 	internalActionRefs := 0
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
@@ -103,8 +102,8 @@ func TestReusableWorkflowContractAndActionRefs(t *testing.T) {
 		value = strings.Fields(value)[0]
 		if strings.HasPrefix(value, "ca-x/lazycat-github-action@") {
 			internalActionRefs++
-			if value != "ca-x/lazycat-github-action@"+actionVersion {
-				t.Fatalf("reusable workflow Action ref %q must match action.yml bootstrap version %q", value, actionVersion)
+			if value != "ca-x/lazycat-github-action@v1" {
+				t.Fatalf("reusable workflow Action ref %q must use the floating v1 tag", value)
 			}
 			continue
 		}
@@ -375,8 +374,8 @@ func TestActionMetadataExposesStableContract(t *testing.T) {
 	if document.Runs.Using != "composite" {
 		t.Fatalf("runs.using=%q", document.Runs.Using)
 	}
-	if got := actionBootstrapVersion(t); got != "v1.2.1" {
-		t.Fatalf("action.yml bootstrap version=%q, want v1.2.1", got)
+	if got := actionBootstrapVersion(t); got != "v1.2.2" {
+		t.Fatalf("action.yml bootstrap version=%q, want v1.2.2", got)
 	}
 }
 

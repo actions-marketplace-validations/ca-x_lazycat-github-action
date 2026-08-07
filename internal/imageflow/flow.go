@@ -359,7 +359,10 @@ func imageRule(image config.Image) (versioning.Rule, registry.TagFilter, error) 
 		Channel: versioning.Channel(image.Channel), Sort: versioning.Sort(image.Sort), TagRegex: tagRegex,
 		ExcludeRegex: excludeRegex, VersionRegex: versionRegex, VersionTemplate: image.VersionTemplate,
 	}
-	filter := registry.TagFilter{Include: tagRegex, Exclude: excludeRegex}
+	filter := registry.TagFilter{
+		Include: tagRegex, Exclude: excludeRegex,
+		MaxTags: image.MaxTags, MaxMatchingTags: image.MaxMatchingTags,
+	}
 	if rule.Sort == versioning.SortSemVer {
 		filter.SemVerRule = &rule
 	}

@@ -111,28 +111,27 @@ func (err *Error) Error() string {
 		return "<nil>"
 	}
 	message := err.Code + ": " + err.Message
-	var toolkitError *lpkgo.Error
-	if !errors.As(err.Cause, &toolkitError) {
-		return message
-	}
 	details := make([]string, 0, 5)
-	if toolkitError.Code != "" {
-		details = append(details, "upstream="+string(toolkitError.Code))
-	}
-	if toolkitError.StatusCode > 0 {
-		details = append(details, fmt.Sprintf("status=%d", toolkitError.StatusCode))
-	}
-	if toolkitError.Op != "" {
-		details = append(details, "op="+toolkitError.Op)
+	var toolkitError *lpkgo.Error
+	if errors.As(err.Cause, &toolkitError) {
+		if toolkitError.Code != "" {
+			details = append(details, "upstream="+string(toolkitError.Code))
+		}
+		if toolkitError.StatusCode > 0 {
+			details = append(details, fmt.Sprintf("status=%d", toolkitError.StatusCode))
+		}
+		if toolkitError.Op != "" {
+			details = append(details, "op="+toolkitError.Op)
+		}
 	}
 	var publicPath interface{ PublicErrorPath() string }
-	if errors.As(toolkitError.Cause, &publicPath) {
+	if errors.As(err.Cause, &publicPath) {
 		if path := diagnostic.SafePath(publicPath.PublicErrorPath()); path != "" {
 			details = append(details, "path="+quoteDiagnosticToken(path))
 		}
 	}
 	var publicDetail interface{ PublicErrorDetail() string }
-	if errors.As(toolkitError.Cause, &publicDetail) {
+	if errors.As(err.Cause, &publicDetail) {
 		if detail := diagnostic.SafeDetail(publicDetail.PublicErrorDetail()); detail != "" {
 			details = append(details, "message="+strconv.Quote(detail))
 		}

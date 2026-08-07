@@ -239,6 +239,15 @@ func validate(value Config) error {
 		if image.Source == "" {
 			return fmt.Errorf("image %q source is required", image.ID)
 		}
+		if image.MaxTags < 0 || image.MaxTags > 50000 {
+			return fmt.Errorf("image %q max_tags must be between 1 and 50000 when set", image.ID)
+		}
+		if image.MaxMatchingTags < 0 || image.MaxMatchingTags > 50000 {
+			return fmt.Errorf("image %q max_matching_tags must be between 1 and 50000 when set", image.ID)
+		}
+		if image.MaxTags > 0 && image.MaxMatchingTags > image.MaxTags {
+			return fmt.Errorf("image %q max_matching_tags must not exceed max_tags", image.ID)
+		}
 		targetKey := image.Target
 		switch image.Target {
 		case "service":

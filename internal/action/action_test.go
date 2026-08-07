@@ -238,6 +238,18 @@ func TestErrorIncludesExplicitPublicUpstreamMessage(t *testing.T) {
 	}
 }
 
+func TestErrorIncludesExplicitPublicRegistryMessage(t *testing.T) {
+	err := &action.Error{
+		Code:    action.CodeConfigInvalid,
+		Message: "image check failed",
+		Cause:   publicDetailError{message: "image repository returned 10347 tags; raw limit is 10000"},
+	}
+	message := err.Error()
+	if !strings.Contains(message, `message="image repository returned 10347 tags; raw limit is 10000"`) {
+		t.Fatalf("message=%q", message)
+	}
+}
+
 func TestErrorIncludesSafeBuildPathLineAndMessage(t *testing.T) {
 	err := &action.Error{
 		Code:    action.CodeBuildFailed,

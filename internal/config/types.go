@@ -79,6 +79,8 @@ type Image struct {
 	ExcludeRegex    string   `yaml:"exclude_regex"`
 	VersionRegex    string   `yaml:"version_regex"`
 	VersionTemplate string   `yaml:"version_template"`
+	MaxTags         int      `yaml:"max_tags"`
+	MaxMatchingTags int      `yaml:"max_matching_tags"`
 	Delivery        Delivery `yaml:"delivery"`
 }
 
