@@ -377,8 +377,8 @@ func TestActionMetadataExposesStableContract(t *testing.T) {
 	if document.Runs.Using != "composite" {
 		t.Fatalf("runs.using=%q", document.Runs.Using)
 	}
-	if got := actionBootstrapVersion(t); got != "v1.2.4" {
-		t.Fatalf("action.yml bootstrap version=%q, want v1.2.4", got)
+	if got := actionBootstrapVersion(t); got != "v1.2.5" {
+		t.Fatalf("action.yml bootstrap version=%q, want v1.2.5", got)
 	}
 }
 

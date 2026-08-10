@@ -71,28 +71,35 @@ func ReadInput(getenv func(string) string) (action.Input, error) {
 		}
 		eventVersion = tag
 	}
-	eventCanonicalVersion := ""
+	if rawVersion != "" {
+		version, tag, err := normalizeVersion(rawVersion)
+		if err != nil {
+			return action.Input{}, err
+		}
+		if eventVersion != "" {
+			eventCanonicalVersion, _, eventErr := normalizeVersion(eventVersion)
+			switch {
+			case eventErr == nil && eventCanonicalVersion != version:
+				return action.Input{}, fmt.Errorf("input version %q does not match event version %q", version, eventCanonicalVersion)
+			case eventErr != nil && !strings.HasSuffix(eventVersion, "-"+tag):
+				return action.Input{}, fmt.Errorf("event tag %q does not identify input version %q", eventVersion, version)
+			}
+			tag = eventVersion
+		}
+		input.Version = version
+		input.Tag = tag
+		return input, nil
+	}
 	if eventVersion != "" {
-		version, tag, err := normalizeVersion(eventVersion)
+		_, tag, err := normalizeVersion(eventVersion)
 		if err != nil {
 			return action.Input{}, fmt.Errorf("invalid event version: %w", err)
 		}
 		if eventVersion != tag {
 			return action.Input{}, fmt.Errorf("event version tag %q must use canonical form %q", eventVersion, tag)
 		}
-		eventCanonicalVersion = version
 	}
-	if rawVersion == "" {
-		rawVersion = eventVersion
-	} else if eventVersion != "" {
-		version, _, err := normalizeVersion(rawVersion)
-		if err != nil {
-			return action.Input{}, err
-		}
-		if version != eventCanonicalVersion {
-			return action.Input{}, fmt.Errorf("input version %q does not match event version %q", version, eventCanonicalVersion)
-		}
-	}
+	rawVersion = eventVersion
 	if rawVersion != "" {
 		version, tag, err := normalizeVersion(rawVersion)
 		if err != nil {

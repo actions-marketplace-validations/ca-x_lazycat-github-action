@@ -218,7 +218,7 @@ jobs:
 
 `strategy: pull` 是默认策略。发现新镜像后，workflow 只更新显式配置的目标，构建并校验 LPK，上传 Workflow Artifact，然后创建或更新 `lazycat/update-all`。
 
-使用 `operation: auto` 时，`workflow_dispatch` 会构建 Git 版本源项目（未提供版本输入时读取 `package.yml.version`），对镜像版本源项目则执行检查；手动显式提供版本始终执行构建。Tag push 执行构建，schedule 执行镜像检查，显式指定的 `check` 或 `build` 不受 auto 逻辑影响。
+使用 `operation: auto` 时，`workflow_dispatch` 会构建 Git 版本源项目（未提供版本输入时读取 `package.yml.version`），对镜像版本源项目则执行检查；手动显式提供版本始终执行构建。Tag push 执行构建，schedule 执行镜像检查。其他情况下显式操作仍保持原语义，但 Tag 和 Release 事件会拒绝 `check`，避免把镜像更新发布到无关的事件 Tag 下。
 
 如果只想处理一个镜像，可以传 `image-id`：
 
@@ -622,7 +622,7 @@ jobs:
     secrets: inherit
 ```
 
-Action 会移除一个前导 `v`，更新 `package.yml.version`，运行项目 buildscript，构建并重新打开 LPK，执行 lint，计算 SHA256，然后上传到对应 Release。如果 tag/release checkout 修改了 `package.yml`，Release Asset 上传成功后，workflow 会把该文件同步回默认分支。
+对于普通的 `v<version>` Tag，Action 会移除前导 `v`。显式提供版本时，匹配的 SemVer 事件 Tag 会原样保留。`client-v0.1.38`、`server-v0.1.44` 这类组件 Tag 必须以匹配的 `-v<version>` 结尾；Action 会保留事件 Tag 作为 Release 标识，并拒绝无关后缀或版本不一致。未显式提供版本时，事件 Tag 必须使用规范的 `v<version>`。随后 Action 更新 `package.yml.version`，运行项目 buildscript，构建并重新打开 LPK，执行 lint，计算 SHA256，然后上传到对应 Release。如果 tag/release checkout 修改了 `package.yml`，Release Asset 上传成功后，workflow 会把该文件同步回默认分支。
 
 ### TypeScript 静态 Web 构建
 
@@ -732,7 +732,7 @@ application:
 | `package-file` | `package.yml` 绝对路径 |
 | `manifest-file` | Manifest 绝对路径 |
 | `version` | 去掉前导 `v` 的规范化 SemVer |
-| `tag` | 规范化的 `v<version>` tag |
+| `tag` | 显式提供版本时保留匹配的事件 Tag；否则为规范化的 `v<version>` |
 | `lpk-path` | 当前 job 中构建出的 LPK 绝对路径 |
 | `sha256` | 64 位小写 LPK SHA256 |
 | `download-url` | 发布后确认过的 GitHub Release Asset URL |

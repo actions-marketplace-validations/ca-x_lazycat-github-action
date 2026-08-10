@@ -432,6 +432,9 @@ func runCheck(ctx context.Context, input Input, cfg config.Config, info project.
 	if cfg.Update.Strategy == config.StrategyPublish && input.ImageID != "" && input.ImageID != cfg.Update.VersionSource.Image {
 		return Result{}, actionError(CodeConfigInvalid, fmt.Sprintf("publish strategy image-id %q must select version-source image %q", input.ImageID, cfg.Update.VersionSource.Image), nil)
 	}
+	if input.EventName == "release" || input.RefType == "tag" {
+		return Result{}, actionError(CodeConfigInvalid, "check operation is not supported for tag or release events", nil)
+	}
 	if dependencies.CheckImages == nil {
 		return Result{}, actionError(CodeConfigInvalid, "image check dependency is unavailable", nil)
 	}

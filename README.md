@@ -218,7 +218,7 @@ jobs:
 
 `strategy: pull` is the default. When a newer image exists, the workflow updates only the configured targets, builds and validates the LPK, uploads a Workflow Artifact, and opens or updates `lazycat/update-all`.
 
-With `operation: auto`, `workflow_dispatch` builds a Git-version-source project (using `package.yml.version` when no version input is supplied) and checks an image-version-source project. An explicit manual version always builds. Tag pushes build, schedules check images, and an explicit `check` or `build` operation is unchanged.
+With `operation: auto`, `workflow_dispatch` builds a Git-version-source project (using `package.yml.version` when no version input is supplied) and checks an image-version-source project. An explicit manual version always builds. Tag pushes build and schedules check images. Explicit operations otherwise keep their requested behavior, but `check` is rejected for Tag and Release events so an image update cannot be published under an unrelated event tag.
 
 Use `image-id` to process one configured image:
 
@@ -626,7 +626,7 @@ jobs:
     secrets: inherit
 ```
 
-The Action removes one leading `v`, updates `package.yml.version`, runs the project buildscript, builds and reopens the LPK, lints it, computes SHA256, and uploads it to the matching Release. If the tag/release checkout changed `package.yml`, the workflow synchronizes that file to the default branch after a successful asset upload.
+For an ordinary `v<version>` tag, the Action removes the leading `v`. When an explicit version is supplied, a matching SemVer event tag is preserved. A component tag such as `client-v0.1.38` or `server-v0.1.44` must end with the matching `-v<version>` suffix; the Action preserves that event tag as the Release identity and rejects an unrelated suffix or version mismatch. Without an explicit version, event tags must use canonical `v<version>`. The Action updates `package.yml.version`, runs the project buildscript, builds and reopens the LPK, lints it, computes SHA256, and uploads it to the matching Release. If the tag/release checkout changed `package.yml`, the workflow synchronizes that file to the default branch after a successful asset upload.
 
 ### TypeScript static Web build
 
@@ -736,7 +736,7 @@ These projects do not need an `images` section. Their version comes from the tag
 | `package-file` | Absolute `package.yml` path |
 | `manifest-file` | Absolute Manifest path |
 | `version` | Normalized SemVer without a leading `v` |
-| `tag` | Normalized `v<version>` tag |
+| `tag` | Matching event tag when an explicit version is supplied; otherwise normalized `v<version>` |
 | `lpk-path` | Absolute built LPK path inside the job |
 | `sha256` | Lowercase 64-character LPK SHA256 |
 | `download-url` | Verified GitHub Release Asset URL when released |

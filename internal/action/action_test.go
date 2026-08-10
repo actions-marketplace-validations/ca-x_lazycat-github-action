@@ -696,7 +696,7 @@ func TestRunCheckUpdatesVersionBuildsAndReturnsImageResults(t *testing.T) {
 			return imageflow.Result{Changed: true, Version: "2.0.0", Channel: "stable", Images: []imageflow.ImageResult{{ID: "web", Target: "service", Service: "web", Platform: "linux/amd64", SourceRef: "ghcr.io/acme/web:v2.0.0", SourceDigest: strings.Repeat("a", 64), DeliveryMode: "direct", DeliveredRef: "ghcr.io/acme/web:v2.0.0"}}}, nil
 		},
 	}
-	result, err := action.Run(context.Background(), action.Input{Operation: action.OperationCheck}, deps)
+	result, err := action.Run(context.Background(), action.Input{Operation: action.OperationCheck, EventName: "workflow_dispatch", RefType: "branch", RefName: "main"}, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -705,6 +705,47 @@ func TestRunCheckUpdatesVersionBuildsAndReturnsImageResults(t *testing.T) {
 	}
 	if built.Version != "2.0.0" || built.Channel != "stable" || !strings.Contains(string(result.ImageResults), `"id":"web"`) {
 		t.Fatalf("built=%#v images=%s", built, result.ImageResults)
+	}
+}
+
+func TestRunCheckRejectsTagAndReleaseEventsBeforeImageCheck(t *testing.T) {
+	tests := []action.Input{
+		{Operation: action.OperationCheck, EventName: "push", RefType: "tag", RefName: "client-v0.1.38", Version: "0.1.38", Tag: "client-v0.1.38"},
+		{Operation: action.OperationCheck, EventName: "release", Version: "0.1.38", Tag: "v0.1.38"},
+		{Operation: action.OperationCheck, EventName: "workflow_dispatch", RefType: "tag", RefName: "v0.1.38", Version: "0.1.38", Tag: "v0.1.38"},
+	}
+	checkCalls := 0
+	deps := action.Dependencies{
+		Host: platform.Host{OS: "linux", Arch: "amd64"},
+		LoadConfig: func(string) (config.Config, error) {
+			cfg := gitConfig()
+			cfg.Update.VersionSource = config.VersionSource{Type: config.VersionSourceImage, Image: "web"}
+			return cfg, nil
+		},
+		Inspect: func(context.Context, config.Project) (project.Info, error) {
+			return project.Info{PackageID: "cloud.lazycat.example", Version: "0.1.38"}, nil
+		},
+		SetVersion: func(string, string) (yamledit.Change, error) {
+			t.Fatal("tag and release checks should fail before changing the project")
+			return yamledit.Change{}, nil
+		},
+		Build: func(context.Context, actionbuild.Request) (actionbuild.Result, error) {
+			t.Fatal("tag and release checks should fail before building")
+			return actionbuild.Result{}, nil
+		},
+		CheckImages: func(context.Context, imageflow.Request) (imageflow.Result, error) {
+			checkCalls++
+			return imageflow.Result{Version: "0.1.38", Channel: "stable"}, nil
+		},
+	}
+	for _, input := range tests {
+		_, err := action.Run(context.Background(), input, deps)
+		if err == nil || !strings.Contains(err.Error(), "not supported for tag or release events") {
+			t.Fatalf("input=%#v err=%v", input, err)
+		}
+	}
+	if checkCalls != 0 {
+		t.Fatalf("check calls=%d", checkCalls)
 	}
 }
 

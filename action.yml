@@ -8,7 +8,7 @@ branding:
 
 inputs:
   operation:
-    description: auto, check, build, publish-official, or publish-private; auto uses the event and configured version source.
+    description: auto, check, build, publish-official, or publish-private; auto uses the event and configured version source; check rejects tag and release events.
     required: false
     default: auto
   config:
@@ -64,7 +64,7 @@ outputs:
     description: Normalized application version without a leading v.
     value: ${{ steps.run.outputs.version }}
   tag:
-    description: Normalized Git tag.
+    description: Matching event tag when present, otherwise normalized v<version>.
     value: ${{ steps.run.outputs.tag }}
   lpk-path:
     description: Absolute path to the built LPK.
@@ -110,7 +110,7 @@ runs:
       id: run
       shell: bash
       env:
-        LAZYCAT_ACTION_VERSION: v1.2.4
+        LAZYCAT_ACTION_VERSION: v1.2.5
         INPUT_OPERATION: ${{ inputs.operation }}
         INPUT_CONFIG: ${{ inputs.config }}
         INPUT_IMAGE_ID: ${{ inputs['image-id'] }}

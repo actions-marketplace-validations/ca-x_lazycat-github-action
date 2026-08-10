@@ -49,6 +49,49 @@ func TestReadInputNormalizesTagVersionAndActionFields(t *testing.T) {
 	}
 }
 
+func TestReadInputAcceptsExplicitVersionForMatchingComponentTag(t *testing.T) {
+	tests := []struct {
+		tag     string
+		version string
+	}{
+		{tag: "client-v0.1.38", version: "0.1.38"},
+		{tag: "server-v0.1.44", version: "0.1.44"},
+	}
+	for _, test := range tests {
+		t.Run(test.tag, func(t *testing.T) {
+			environment := map[string]string{
+				"INPUT_VERSION":     test.version,
+				"GITHUB_EVENT_NAME": "push",
+				"GITHUB_REF_TYPE":   "tag",
+				"GITHUB_REF_NAME":   test.tag,
+			}
+			input, err := githubio.ReadInput(func(key string) string { return environment[key] })
+			if err != nil {
+				t.Fatal(err)
+			}
+			if input.Version != test.version || input.Tag != test.tag {
+				t.Fatalf("input=%#v", input)
+			}
+		})
+	}
+}
+
+func TestReadInputRejectsExplicitVersionForUnrelatedComponentTag(t *testing.T) {
+	for _, tag := range []string{"client-invalid", "client-v0.1.39"} {
+		t.Run(tag, func(t *testing.T) {
+			environment := map[string]string{
+				"INPUT_VERSION":     "0.1.38",
+				"GITHUB_EVENT_NAME": "push",
+				"GITHUB_REF_TYPE":   "tag",
+				"GITHUB_REF_NAME":   tag,
+			}
+			if _, err := githubio.ReadInput(func(key string) string { return environment[key] }); err == nil || !strings.Contains(err.Error(), "does not identify input version") {
+				t.Fatalf("err=%v", err)
+			}
+		})
+	}
+}
+
 func TestReadInputReadsReleaseTagFromEventFile(t *testing.T) {
 	eventFile := filepath.Join(t.TempDir(), "event.json")
 	if err := os.WriteFile(eventFile, []byte(`{"release":{"tag_name":"v2.3.4"}}`), 0o600); err != nil {
@@ -60,6 +103,37 @@ func TestReadInputReadsReleaseTagFromEventFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if input.Version != "2.3.4" || input.Tag != "v2.3.4" {
+		t.Fatalf("input=%#v", input)
+	}
+}
+
+func TestReadInputReadsCanonicalTagWhenExplicitVersionIsEmpty(t *testing.T) {
+	environment := map[string]string{
+		"GITHUB_EVENT_NAME": "push",
+		"GITHUB_REF_TYPE":   "tag",
+		"GITHUB_REF_NAME":   "v0.1.38",
+	}
+	input, err := githubio.ReadInput(func(key string) string { return environment[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.Version != "0.1.38" || input.Tag != "v0.1.38" {
+		t.Fatalf("input=%#v", input)
+	}
+}
+
+func TestReadInputPreservesMatchingSemVerEventTag(t *testing.T) {
+	environment := map[string]string{
+		"INPUT_VERSION":     "0.1.38",
+		"GITHUB_EVENT_NAME": "push",
+		"GITHUB_REF_TYPE":   "tag",
+		"GITHUB_REF_NAME":   "0.1.38",
+	}
+	input, err := githubio.ReadInput(func(key string) string { return environment[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.Version != "0.1.38" || input.Tag != "0.1.38" {
 		t.Fatalf("input=%#v", input)
 	}
 }
@@ -88,6 +162,25 @@ func TestReadInputRejectsExplicitVersionThatConflictsWithReleaseEvent(t *testing
 	}
 	if _, err := githubio.ReadInput(func(key string) string { return environment[key] }); err == nil || !strings.Contains(err.Error(), "does not match event version") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestReadInputAcceptsExplicitVersionForComponentReleaseTag(t *testing.T) {
+	eventFile := filepath.Join(t.TempDir(), "event.json")
+	if err := os.WriteFile(eventFile, []byte(`{"release":{"tag_name":"client-v0.1.38"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	environment := map[string]string{
+		"INPUT_VERSION":     "0.1.38",
+		"GITHUB_EVENT_NAME": "release",
+		"GITHUB_EVENT_PATH": eventFile,
+	}
+	input, err := githubio.ReadInput(func(key string) string { return environment[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.Version != "0.1.38" || input.Tag != "client-v0.1.38" {
+		t.Fatalf("input=%#v", input)
 	}
 }
 

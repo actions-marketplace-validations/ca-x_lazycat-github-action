@@ -28,7 +28,7 @@ jobs:
 
 Keep `update.strategy: pull`. This uploads a validation Artifact and creates/updates a PR. It does not publish stores.
 
-For `operation: auto`, a manual `workflow_dispatch` checks an image version source but builds a Git version source, reading `package.yml.version` when no explicit version is supplied. Set the reusable workflow input `version: 1.2.3` to request an explicit build version. Tag pushes build, schedules check images, and explicit operations keep their requested behavior.
+For `operation: auto`, a manual `workflow_dispatch` checks an image version source but builds a Git version source, reading `package.yml.version` when no explicit version is supplied. Set the reusable workflow input `version: 1.2.3` to request an explicit build version. Tag pushes build and schedules check images. Explicit operations otherwise keep their requested behavior, but `check` rejects Tag and Release events before image inspection or delivery.
 
 ## Tag source build
 
@@ -58,7 +58,7 @@ jobs:
       PRIVATE_STORE_GROUP_CODES: ${{ secrets.PRIVATE_STORE_GROUP_CODES }}
 ```
 
-Use `update.version_source.type: git`. The workflow updates `package.yml.version`, builds, uploads the Release Asset, and syncs the version to the default branch. With `versioned-release-asset: true`, the Release filename is `<package-id>-v<version>.lpk`. The private store uses its verified Release Asset URL and SHA256; the official store uploads the same locally verified LPK bytes and SHA256 without receiving that URL.
+Use `update.version_source.type: git`. The workflow updates `package.yml.version`, builds, uploads the Release Asset, and syncs the version to the default branch. An ordinary event tag uses canonical `v<version>`. With an explicit version, a matching SemVer event tag is preserved. A component tag such as `client-v0.1.38` must pass `version: 0.1.38` and end with the matching `-v<version>` suffix; the Action preserves the component tag as the Release identity and rejects a mismatched or unrelated suffix. Without an explicit version, noncanonical event tags fail closed. With `versioned-release-asset: true`, the Release filename is `<package-id>-v<version>.lpk`. The private store uses its verified Release Asset URL and SHA256; the official store uploads the same locally verified LPK bytes and SHA256 without receiving that URL.
 
 ## Historical LPK migration checkpoint
 
