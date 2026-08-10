@@ -364,7 +364,7 @@ with:
   registry-mirrors: quay.io=mirror.example/quay,registry.example.com=mirror.example/registry
 ```
 
-The Composite Action reads the same GitHub Variables and lets equivalent job/step environment variables override them. Values are Registry/path prefixes without a URL scheme. Precedence is reusable-workflow input or composite environment, GitHub Variable, existing `image_template`, then the built-in Docker Hub/GHCR default. Missing or empty environment values are not errors. Other registries require an entry in `LAZYCAT_REGISTRY_MIRRORS`.
+The Composite Action accepts `docker-mirror`, `ghcr-mirror`, and `registry-mirrors` inputs and falls back to equivalent job/step environment variables; composite metadata cannot access the GitHub `vars` context. A caller that wants Repository/Organization Variables maps them in its own workflow, for example `docker-mirror: ${{ vars.LAZYCAT_DOCKER_MIRROR }}` under `with`. Values are Registry/path prefixes without a URL scheme. Precedence is reusable/composite input (including a caller-mapped GitHub Variable), composite environment, existing `image_template`, then the built-in Docker Hub/GHCR default. Missing or empty values are not errors. Other registries require an entry in `LAZYCAT_REGISTRY_MIRRORS`.
 
 For migration, mirror delivery can recover an omitted `source` from the Manifest's `upstream` comment or from a known built-in/configured mirror reference. For example, `docker.1ms.run/acme/api:v1` recovers `docker.io/acme/api`. The Action does not rewrite `.github/lazycat-action.yml`; if the upstream cannot be recovered unambiguously, it fails before querying a Registry or editing the Manifest.
 

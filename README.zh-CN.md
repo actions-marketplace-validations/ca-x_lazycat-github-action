@@ -364,7 +364,7 @@ with:
   registry-mirrors: quay.io=mirror.example/quay,registry.example.com=mirror.example/registry
 ```
 
-Composite Action 会读取相同的 GitHub Variables，并允许同名 job/step 环境变量覆盖它们。值是不能带 URL scheme 的 Registry/path 前缀。优先级依次为 reusable-workflow input 或 composite 环境变量、GitHub Variable、历史 `image_template`、Docker Hub/GHCR 内置默认值。环境变量缺失或为空不是错误。其他 Registry 必须在 `LAZYCAT_REGISTRY_MIRRORS` 中配置映射。
+Composite Action 提供 `docker-mirror`、`ghcr-mirror` 和 `registry-mirrors` inputs，并 fallback 到同名 job/step 环境变量；composite metadata 不能访问 GitHub `vars` 上下文。需要 Repository/Organization Variables 的调用方必须在自己的 workflow 的 `with` 中映射，例如 `docker-mirror: ${{ vars.LAZYCAT_DOCKER_MIRROR }}`。值是不能带 URL scheme 的 Registry/path 前缀。优先级依次为 reusable/composite input（包括由调用方映射的 GitHub Variable）、composite 环境变量、历史 `image_template`、Docker Hub/GHCR 内置默认值。值缺失或为空不是错误。其他 Registry 必须在 `LAZYCAT_REGISTRY_MIRRORS` 中配置映射。
 
 迁移历史项目时，mirror 模式可以从 Manifest 的 `upstream` 注释或已知的内置/自定义 mirror 地址恢复省略的 `source`。例如 `docker.1ms.run/acme/api:v1` 会恢复为 `docker.io/acme/api`。Action 不会回写 `.github/lazycat-action.yml`；无法无歧义恢复上游时，会在查询 Registry 或修改 Manifest 前安全失败。
 

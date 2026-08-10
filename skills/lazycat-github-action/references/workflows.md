@@ -37,7 +37,7 @@ with:
   registry-mirrors: quay.io=mirror.example/quay
 ```
 
-These ordinary inputs and GitHub Variables contain only public Registry/path prefixes, never Registry credentials. The Composite Action reads the same GitHub Variables and lets corresponding job/step environment variables override them.
+These ordinary inputs and GitHub Variables contain only public Registry/path prefixes, never Registry credentials. Composite Action metadata cannot access `vars`; it exposes the same three lower-case inputs, so a composite caller maps `${{ vars.LAZYCAT_DOCKER_MIRROR }}` and its siblings through the caller's `with` block. Missing Variables become empty input values and safely fall back to same-named environment variables, historical templates, or built-in defaults.
 
 For `operation: auto`, a manual `workflow_dispatch` checks an image version source but builds a Git version source, reading `package.yml.version` when no explicit version is supplied. Set the reusable workflow input `version: 1.2.3` to request an explicit build version. Tag pushes build and schedules check images. Explicit operations otherwise keep their requested behavior, but `check` rejects Tag and Release events before image inspection or delivery.
 

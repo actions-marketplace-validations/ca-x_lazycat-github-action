@@ -106,32 +106,30 @@ jobs:
           CGO_ENABLED: "0"
         run: go build -o dist/lazycat-action ./cmd/lazycat-action
 
-      - name: Build fixture through composite bootstrap
+      - name: Build fixture through composite Action manifest
+        id: fixture-action
+        uses: ./
         env:
-          RUNNER_OS: Linux
-          RUNNER_ARCH: X64
           LAZYCAT_ACTION_BINARY: ${{ github.workspace }}/dist/lazycat-action
-          INPUT_OPERATION: build
-          INPUT_CONFIG: .github/lazycat-action.yml
-          INPUT_VERSION: v1.2.3
-          INPUT_DRY_RUN: "false"
           SOURCE_DATE_EPOCH: "1783641600"
-          GITHUB_OUTPUT: /tmp/lazycat-action-output
-          GITHUB_STEP_SUMMARY: /tmp/lazycat-action-summary
+        with:
+          operation: build
+          config: testdata/static-app/.github/lazycat-action-ci.yml
+          version: v1.2.3
+
+      - name: Verify composite fixture
+        env:
+          LPK_PATH: ${{ steps.fixture-action.outputs.lpk-path }}
+          RESULT_FILE: ${{ steps.fixture-action.outputs.result-file }}
+          TARGET_PLATFORM: ${{ steps.fixture-action.outputs.target-platform }}
         run: |
-          cp -R testdata/static-app /tmp/lazycat-action-fixture
-          cd /tmp/lazycat-action-fixture
-          "${GITHUB_WORKSPACE}/scripts/run-action.sh"
-          test -f dist/app.lpk
-          test -f .lazycat-action/result.json
-          grep -q 'target-platform<<lazycat_output_' "${GITHUB_OUTPUT}"
-          grep -q 'linux/amd64' "${GITHUB_OUTPUT}"
-          grep -q "Action host: \`linux/amd64\`" "${GITHUB_STEP_SUMMARY}"
-          test "$(sha256sum dist/app.lpk | cut -d' ' -f1)" = "$(sed -n '/^sha256<</{n;p;}' "${GITHUB_OUTPUT}")"
+          test -f "${LPK_PATH}"
+          test -f "${RESULT_FILE}"
+          test "${TARGET_PLATFORM}" = "linux/amd64"
 
       - name: Upload fixture LPK
         uses: actions/upload-artifact@v7
         with:
           name: static-fixture-lpk
-          path: /tmp/lazycat-action-fixture/dist/app.lpk
+          path: ${{ steps.fixture-action.outputs.lpk-path }}
           if-no-files-found: error

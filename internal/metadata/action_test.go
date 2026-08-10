@@ -376,7 +376,7 @@ func TestActionMetadataExposesStableContract(t *testing.T) {
 	if err := yaml.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	for _, input := range []string{"operation", "config", "image-id", "version", "changelog", "lpk-path", "download-url", "sha256", "dry-run"} {
+	for _, input := range []string{"operation", "config", "image-id", "version", "changelog", "lpk-path", "download-url", "sha256", "dry-run", "docker-mirror", "ghcr-mirror", "registry-mirrors"} {
 		if _, exists := document.Inputs[input]; !exists {
 			t.Fatalf("missing input %q", input)
 		}
@@ -396,16 +396,19 @@ func TestActionMetadataExposesStableContract(t *testing.T) {
 		t.Fatalf("runs.steps=%d", len(document.Runs.Steps))
 	}
 	for name, want := range map[string]string{
-		"LAZYCAT_DOCKER_MIRROR":    "${{ env.LAZYCAT_DOCKER_MIRROR || vars.LAZYCAT_DOCKER_MIRROR }}",
-		"LAZYCAT_GHCR_MIRROR":      "${{ env.LAZYCAT_GHCR_MIRROR || vars.LAZYCAT_GHCR_MIRROR }}",
-		"LAZYCAT_REGISTRY_MIRRORS": "${{ env.LAZYCAT_REGISTRY_MIRRORS || vars.LAZYCAT_REGISTRY_MIRRORS }}",
+		"LAZYCAT_DOCKER_MIRROR":    "${{ inputs['docker-mirror'] || env.LAZYCAT_DOCKER_MIRROR }}",
+		"LAZYCAT_GHCR_MIRROR":      "${{ inputs['ghcr-mirror'] || env.LAZYCAT_GHCR_MIRROR }}",
+		"LAZYCAT_REGISTRY_MIRRORS": "${{ inputs['registry-mirrors'] || env.LAZYCAT_REGISTRY_MIRRORS }}",
 	} {
 		if got := document.Runs.Steps[0].Environment[name]; got != want {
 			t.Fatalf("action env %s=%#v want=%q", name, got, want)
 		}
 	}
-	if got := actionBootstrapVersion(t); got != "v1.2.6" {
-		t.Fatalf("action.yml bootstrap version=%q, want v1.2.6", got)
+	if strings.Contains(string(data), "vars.") {
+		t.Fatal("composite action metadata must not reference the unsupported vars context")
+	}
+	if got := actionBootstrapVersion(t); got != "v1.2.7" {
+		t.Fatalf("action.yml bootstrap version=%q, want v1.2.7", got)
 	}
 }
 
