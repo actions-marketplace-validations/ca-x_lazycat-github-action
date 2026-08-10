@@ -21,6 +21,7 @@ import (
 	"github.com/ca-x/lazycat-github-action/internal/diagnostic"
 	"github.com/ca-x/lazycat-github-action/internal/httpx"
 	"github.com/ca-x/lazycat-github-action/internal/imageflow"
+	"github.com/ca-x/lazycat-github-action/internal/imagemirror"
 	"github.com/ca-x/lazycat-github-action/internal/platform"
 	"github.com/ca-x/lazycat-github-action/internal/platformauth"
 	"github.com/ca-x/lazycat-github-action/internal/project"
@@ -169,15 +170,29 @@ type Dependencies struct {
 }
 
 func DefaultDependencies(host platform.Host) Dependencies {
+	dependencies, err := DefaultDependenciesWithEnv(host, func(string) string { return "" })
+	if err != nil {
+		panic(err)
+	}
+	return dependencies
+}
+
+func DefaultDependenciesWithEnv(host platform.Host, getenv func(string) string) (Dependencies, error) {
+	mirrors, err := imagemirror.FromEnvironment(getenv)
+	if err != nil {
+		return Dependencies{}, fmt.Errorf("configure image mirrors: %w", err)
+	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	builder := actionbuild.Builder{Logger: logger}
 	registryClient := registry.New()
 	resolver := platformauth.Resolver{}
 	storeClient := &platformImageCopier{resolver: resolver}
+	deliveryResolver := delivery.Resolver{Copier: storeClient, Inspector: registryClient, Mirrors: mirrors}
 	imageFlow := imageflow.Flow{
-		Registry:  registryClient,
-		Deliverer: delivery.Resolver{Copier: storeClient, Inspector: registryClient},
-		Logger:    logger,
+		Registry:     registryClient,
+		Deliverer:    deliveryResolver,
+		ResolveImage: deliveryResolver.ResolveImage,
+		Logger:       logger,
 	}
 	publishFlow := publishflow.Default()
 	publishFlow.Logger = logger
@@ -190,7 +205,7 @@ func DefaultDependencies(host platform.Host) Dependencies {
 		Build:       builder.Build,
 		CheckImages: imageFlow.Check,
 		Publish:     publishFlow.Publish,
-	}
+	}, nil
 }
 
 type platformImageCopier struct {

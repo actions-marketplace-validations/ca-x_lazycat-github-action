@@ -20,7 +20,6 @@ images:
     channel: stable
     delivery:
       mode: mirror
-      image_template: ghcr.1ms.run/acme/example-web:{tag}
       require_digest_match: true
 
 stores:

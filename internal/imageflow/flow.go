@@ -86,6 +86,7 @@ type Result struct {
 type Flow struct {
 	Registry      Registry
 	Deliverer     Deliverer
+	ResolveImage  func(config.Image, manifestedit.Current) (config.Image, error)
 	ReadManifest  func(string, []manifestedit.Target) ([]manifestedit.Current, error)
 	ApplyManifest func(string, []manifestedit.Update) ([]manifestedit.Change, error)
 	Logger        *slog.Logger
@@ -131,6 +132,15 @@ func (flow Flow) Check(ctx context.Context, request Request) (Result, error) {
 	for _, image := range selected {
 		if _, exists := currentByID[image.ID]; !exists {
 			return Result{}, fmt.Errorf("manifest reader did not return image target %q", image.ID)
+		}
+	}
+	if flow.ResolveImage != nil {
+		for index, image := range selected {
+			resolved, err := flow.ResolveImage(image, currentByID[image.ID])
+			if err != nil {
+				return Result{}, fmt.Errorf("resolve image %q: %w", image.ID, err)
+			}
+			selected[index] = resolved
 		}
 	}
 

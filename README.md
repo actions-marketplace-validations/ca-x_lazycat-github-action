@@ -345,16 +345,28 @@ The Action sends the selected source reference to the LazyCat developer platform
 
 This mode prefers a PAT in `LZC_API_TOKEN`; existing workflows may keep their legacy lzc-cli session token in `LAZYCAT_TOKEN`. `LZC_API_HOST` defaults to `appstore.api.lazycat.cloud` for PAT authentication and may be overridden. It is the only delivery mode accepted when `stores.official.enabled` is true.
 
-### Explicit mirror
+### Configurable Registry mirror
 
 ```yaml
 delivery:
   mode: mirror
-  image_template: ghcr.1ms.run/acme/example-web:{tag}
   require_digest_match: true
 ```
 
-The Manifest uses the expanded mirror reference. `{tag}`, `{digest}`, and `{source}` are supported. With `require_digest_match: true`, the Action inspects the mirror image for the configured target platform and requires its digest to match the source digest before editing the Manifest.
+When `image_template` is omitted, Docker Hub uses `docker.1ms.run` and GHCR uses `ghcr.1ms.run`. Existing configurations may keep a hand-written `image_template`; without an environment override it remains unchanged. Templates support `{tag}`, `{digest}`, and `{source}`. With `require_digest_match: true`, the Action inspects the mirror image for the configured target platform and requires its digest to match the source digest before editing the Manifest.
+
+The reusable workflow automatically reads GitHub Repository/Organization Variables named `LAZYCAT_DOCKER_MIRROR`, `LAZYCAT_GHCR_MIRROR`, and `LAZYCAT_REGISTRY_MIRRORS`. Undefined Variables resolve to an empty string and safely fall back. Optional workflow inputs can override those Variables for one caller:
+
+```yaml
+with:
+  docker-mirror: mirror.example/docker
+  ghcr-mirror: mirror.example/ghcr
+  registry-mirrors: quay.io=mirror.example/quay,registry.example.com=mirror.example/registry
+```
+
+The Composite Action reads the same GitHub Variables and lets equivalent job/step environment variables override them. Values are Registry/path prefixes without a URL scheme. Precedence is reusable-workflow input or composite environment, GitHub Variable, existing `image_template`, then the built-in Docker Hub/GHCR default. Missing or empty environment values are not errors. Other registries require an entry in `LAZYCAT_REGISTRY_MIRRORS`.
+
+For migration, mirror delivery can recover an omitted `source` from the Manifest's `upstream` comment or from a known built-in/configured mirror reference. For example, `docker.1ms.run/acme/api:v1` recovers `docker.io/acme/api`. The Action does not rewrite `.github/lazycat-action.yml`; if the upstream cannot be recovered unambiguously, it fails before querying a Registry or editing the Manifest.
 
 ### Direct source image
 

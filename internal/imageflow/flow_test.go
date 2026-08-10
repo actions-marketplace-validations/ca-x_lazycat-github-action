@@ -17,6 +17,7 @@ import (
 	"github.com/ca-x/lazycat-github-action/internal/config"
 	"github.com/ca-x/lazycat-github-action/internal/delivery"
 	"github.com/ca-x/lazycat-github-action/internal/imageflow"
+	"github.com/ca-x/lazycat-github-action/internal/imagemirror"
 	"github.com/ca-x/lazycat-github-action/internal/manifestedit"
 	"github.com/ca-x/lazycat-github-action/internal/platform"
 	"github.com/ca-x/lazycat-github-action/internal/project"
@@ -65,6 +66,69 @@ func TestFlowChecksAllImagesAndUpdatesOnlyChangedTarget(t *testing.T) {
 		if !strings.Contains(logs.String(), expected) {
 			t.Fatalf("logs missing %q: %s", expected, logs.String())
 		}
+	}
+}
+
+func TestFlowRecoversMirrorSourceBeforeRegistryQuery(t *testing.T) {
+	mirrors, err := imagemirror.FromEnvironment(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := delivery.Resolver{Mirrors: mirrors}
+	registryClient := &fakeRegistry{bySource: map[string][]versioning.Candidate{
+		"docker.io/calciumion/new-api": {{Tag: "v1.2.3", Digest: digest("a"), Created: created(1)}},
+	}}
+	deliverer := &fakeDeliverer{}
+	cfg := config.Config{
+		Update: config.Update{VersionSource: config.VersionSource{Type: config.VersionSourceImage, Image: "web"}},
+		Images: []config.Image{{
+			ID: "web", Target: "service", Service: "web", Channel: "stable", Sort: "semver", VersionTemplate: "{version}", Delivery: config.Delivery{Mode: "mirror"},
+		}},
+	}
+	flow := imageflow.Flow{
+		Registry: registryClient, Deliverer: deliverer, ResolveImage: resolver.ResolveImage,
+		ReadManifest: func(string, []manifestedit.Target) ([]manifestedit.Current, error) {
+			return []manifestedit.Current{{ID: "web", RuntimeRef: "docker.1ms.run/calciumion/new-api:v1.0.0"}}, nil
+		},
+		ApplyManifest: func(string, []manifestedit.Update) ([]manifestedit.Change, error) {
+			return []manifestedit.Change{{ID: "web", Changed: true}}, nil
+		},
+	}
+	result, err := flow.Check(context.Background(), imageflow.Request{Config: cfg, Project: project.Info{ManifestFile: "manifest.yml", Version: "1.0.0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registryClient.calls != 1 || deliverer.last.Image.Source != "docker.io/calciumion/new-api" || deliverer.last.Image.Delivery.ImageTemplate != "docker.1ms.run/calciumion/new-api:{tag}" {
+		t.Fatalf("registry calls=%d delivery=%#v", registryClient.calls, deliverer.last)
+	}
+	if result.Images[0].SourceRef != "docker.io/calciumion/new-api:v1.2.3" {
+		t.Fatalf("result=%#v", result)
+	}
+}
+
+func TestFlowRejectsUnrecoverableMirrorSourceBeforeRegistryQuery(t *testing.T) {
+	mirrors, err := imagemirror.FromEnvironment(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := delivery.Resolver{Mirrors: mirrors}
+	registryClient := &fakeRegistry{}
+	deliverer := &fakeDeliverer{}
+	flow := imageflow.Flow{
+		Registry: registryClient, Deliverer: deliverer, ResolveImage: resolver.ResolveImage,
+		ReadManifest: func(string, []manifestedit.Target) ([]manifestedit.Current, error) {
+			return []manifestedit.Current{{ID: "web", RuntimeRef: "unknown.example/acme/web:v1"}}, nil
+		},
+	}
+	cfg := config.Config{Images: []config.Image{{
+		ID: "web", Target: "service", Service: "web", Channel: "stable", Sort: "semver", VersionTemplate: "{version}", Delivery: config.Delivery{Mode: "mirror"},
+	}}}
+	_, err = flow.Check(context.Background(), imageflow.Request{Config: cfg, Project: project.Info{ManifestFile: "manifest.yml", Version: "1.0.0"}})
+	if err == nil || !strings.Contains(err.Error(), "source cannot be recovered") {
+		t.Fatalf("err=%v", err)
+	}
+	if registryClient.calls != 0 || deliverer.calls != 0 {
+		t.Fatalf("registry calls=%d delivery calls=%d", registryClient.calls, deliverer.calls)
 	}
 }
 

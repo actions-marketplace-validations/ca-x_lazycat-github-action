@@ -8,6 +8,8 @@ import (
 
 	"github.com/ca-x/lazycat-github-action/internal/config"
 	"github.com/ca-x/lazycat-github-action/internal/delivery"
+	"github.com/ca-x/lazycat-github-action/internal/imagemirror"
+	"github.com/ca-x/lazycat-github-action/internal/manifestedit"
 	"github.com/ca-x/lazycat-github-action/internal/platform"
 	"github.com/ca-x/lazycat-github-action/internal/registry"
 	"github.com/lib-x/lzc-toolkit-go/appstore"
@@ -245,6 +247,55 @@ func TestMirrorDeliveryExpandsTemplateAndVerifiesDigest(t *testing.T) {
 	}
 	if result.RuntimeRef != "ghcr.1ms.run/acme/web:v1.2.3" || inspector.reference != result.RuntimeRef || result.Copied {
 		t.Fatalf("result=%#v inspector=%#v", result, inspector)
+	}
+}
+
+func TestMirrorDeliveryUsesBuiltInTemplateAndEnvironmentOverride(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		environment map[string]string
+		existing    string
+		want        string
+	}{
+		{name: "built-in", want: "ghcr.1ms.run/acme/web:v1.2.3"},
+		{name: "override", environment: map[string]string{imagemirror.EnvGHCRMirror: "mirror.example/ghcr"}, existing: "legacy.example/acme/web:{tag}", want: "mirror.example/ghcr/acme/web:v1.2.3"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			mirrors, err := imagemirror.FromEnvironment(func(name string) string { return test.environment[name] })
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := (delivery.Resolver{Mirrors: mirrors}).Deliver(context.Background(), delivery.Request{
+				Image: config.Image{ID: "web", Source: "ghcr.io/acme/web", Delivery: config.Delivery{Mode: "mirror", ImageTemplate: test.existing}},
+				Tag:   "v1.2.3", SourceRef: "ghcr.io/acme/web:v1.2.3", SourceDigest: digest("a"),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.RuntimeRef != test.want {
+				t.Fatalf("runtime=%q want=%q", result.RuntimeRef, test.want)
+			}
+		})
+	}
+}
+
+func TestResolverRecoversMirrorSourceFromManifest(t *testing.T) {
+	mirrors, err := imagemirror.FromEnvironment(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := delivery.Resolver{Mirrors: mirrors}
+	for _, current := range []manifestedit.Current{
+		{UpstreamRef: "ghcr.io/acme/web:v1.2.3@" + digest("a"), RuntimeRef: "unrecognized.example/web:v1"},
+		{RuntimeRef: "ghcr.1ms.run/acme/web:v1.2.3"},
+	} {
+		resolved, err := resolver.ResolveImage(config.Image{ID: "web", Delivery: config.Delivery{Mode: "mirror"}}, current)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved.Source != "ghcr.io/acme/web" || resolved.Delivery.ImageTemplate != "ghcr.1ms.run/acme/web:{tag}" {
+			t.Fatalf("resolved=%#v", resolved)
+		}
 	}
 }
 

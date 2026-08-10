@@ -109,9 +109,12 @@ Mirror:
 ```yaml
 delivery:
   mode: mirror
-  image_template: ghcr.1ms.run/acme/web:{tag}
   require_digest_match: true
 ```
+
+`image_template` is optional. Docker Hub defaults to `docker.1ms.run/<repository>:{tag}` and GHCR defaults to `ghcr.1ms.run/<repository>:{tag}`. A historical explicit template is preserved when no environment override is set. `LAZYCAT_DOCKER_MIRROR` and `LAZYCAT_GHCR_MIRROR` replace the corresponding prefix; `LAZYCAT_REGISTRY_MIRRORS` adds comma-separated `registry=mirror-prefix` mappings for arbitrary registries. The reusable workflow obtains these values from explicit inputs and then same-named GitHub Variables; missing values are empty and trigger fallback. Prefixes may include a path but not a URL scheme, tag, or digest.
+
+Resolution precedence is runtime environment mapping, historical `image_template`, then the built-in Docker Hub/GHCR default. New configurations keep `source` explicit. During migration only, mirror delivery may recover a missing source from the Manifest `upstream` comment or a recognized built-in/configured mirror reference. It never writes that recovered source back to `.github/lazycat-action.yml` and fails before Registry access when recovery is ambiguous.
 
 ## Build environment
 

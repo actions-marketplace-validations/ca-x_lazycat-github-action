@@ -73,6 +73,21 @@ on:
         type: boolean
         required: false
         default: true
+      docker-mirror:
+        description: Optional Docker Hub mirror registry/path prefix; defaults to docker.1ms.run.
+        type: string
+        required: false
+        default: ""
+      ghcr-mirror:
+        description: Optional GHCR mirror registry/path prefix; defaults to ghcr.1ms.run.
+        type: string
+        required: false
+        default: ""
+      registry-mirrors:
+        description: Optional comma-separated registry=mirror-prefix mappings for other registries.
+        type: string
+        required: false
+        default: ""
     secrets:
       LZC_API_HOST:
         required: false
@@ -169,6 +184,9 @@ jobs:
       REGISTRY: ${{ secrets.REGISTRY }}
       REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
       REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+      LAZYCAT_DOCKER_MIRROR: ${{ inputs.docker-mirror || vars.LAZYCAT_DOCKER_MIRROR }}
+      LAZYCAT_GHCR_MIRROR: ${{ inputs.ghcr-mirror || vars.LAZYCAT_GHCR_MIRROR }}
+      LAZYCAT_REGISTRY_MIRRORS: ${{ inputs.registry-mirrors || vars.LAZYCAT_REGISTRY_MIRRORS }}
     steps:
       - name: Checkout application
         uses: actions/checkout@v7

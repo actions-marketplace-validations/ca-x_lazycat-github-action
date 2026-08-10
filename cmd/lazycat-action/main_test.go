@@ -22,3 +22,14 @@ func TestRunRejectsArguments(t *testing.T) {
 		t.Fatalf("code=%d", code)
 	}
 }
+
+func TestRunRejectsInvalidMirrorEnvironmentBeforeLoadingConfig(t *testing.T) {
+	environment := map[string]string{
+		"LAZYCAT_DOCKER_MIRROR": "https://mirror.example",
+	}
+	var stdout, stderr bytes.Buffer
+	code := run(nil, func(name string) string { return environment[name] }, &stdout, &stderr)
+	if code != 1 || !strings.Contains(stderr.String(), "CONFIG_INVALID") || !strings.Contains(stderr.String(), "LAZYCAT_DOCKER_MIRROR") {
+		t.Fatalf("code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+}

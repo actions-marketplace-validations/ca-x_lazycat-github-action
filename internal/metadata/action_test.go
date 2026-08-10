@@ -69,7 +69,7 @@ func TestReusableWorkflowContractAndActionRefs(t *testing.T) {
 		t.Fatalf("workflow_call=%#v", on["workflow_call"])
 	}
 	inputs, _ := call["inputs"].(map[string]any)
-	for _, name := range []string{"config", "operation", "runner", "image-id", "version", "dry-run", "changelog", "toolchains", "go-version", "node-version", "rust-toolchain", "node-package-manager", "enable-qemu"} {
+	for _, name := range []string{"config", "operation", "runner", "image-id", "version", "dry-run", "changelog", "toolchains", "go-version", "node-version", "rust-toolchain", "node-package-manager", "enable-qemu", "docker-mirror", "ghcr-mirror", "registry-mirrors"} {
 		if _, found := inputs[name]; !found {
 			t.Fatalf("missing workflow input %q", name)
 		}
@@ -90,6 +90,18 @@ func TestReusableWorkflowContractAndActionRefs(t *testing.T) {
 	for _, name := range []string{"contents", "pull-requests"} {
 		if got := permissions[name]; got != "write" {
 			t.Fatalf("workflow permission %q=%#v, want write", name, got)
+		}
+	}
+	jobs, _ := document["jobs"].(map[string]any)
+	lazycat, _ := jobs["lazycat"].(map[string]any)
+	environment, _ := lazycat["env"].(map[string]any)
+	for name, want := range map[string]string{
+		"LAZYCAT_DOCKER_MIRROR":    "${{ inputs.docker-mirror || vars.LAZYCAT_DOCKER_MIRROR }}",
+		"LAZYCAT_GHCR_MIRROR":      "${{ inputs.ghcr-mirror || vars.LAZYCAT_GHCR_MIRROR }}",
+		"LAZYCAT_REGISTRY_MIRRORS": "${{ inputs.registry-mirrors || vars.LAZYCAT_REGISTRY_MIRRORS }}",
+	} {
+		if got := environment[name]; got != want {
+			t.Fatalf("workflow env %s=%#v want=%q", name, got, want)
 		}
 	}
 	internalActionRefs := 0
@@ -356,6 +368,9 @@ func TestActionMetadataExposesStableContract(t *testing.T) {
 		Outputs map[string]any `yaml:"outputs"`
 		Runs    struct {
 			Using string `yaml:"using"`
+			Steps []struct {
+				Environment map[string]any `yaml:"env"`
+			} `yaml:"steps"`
 		} `yaml:"runs"`
 	}
 	if err := yaml.Unmarshal(data, &document); err != nil {
@@ -377,8 +392,20 @@ func TestActionMetadataExposesStableContract(t *testing.T) {
 	if document.Runs.Using != "composite" {
 		t.Fatalf("runs.using=%q", document.Runs.Using)
 	}
-	if got := actionBootstrapVersion(t); got != "v1.2.5" {
-		t.Fatalf("action.yml bootstrap version=%q, want v1.2.5", got)
+	if len(document.Runs.Steps) != 1 {
+		t.Fatalf("runs.steps=%d", len(document.Runs.Steps))
+	}
+	for name, want := range map[string]string{
+		"LAZYCAT_DOCKER_MIRROR":    "${{ env.LAZYCAT_DOCKER_MIRROR || vars.LAZYCAT_DOCKER_MIRROR }}",
+		"LAZYCAT_GHCR_MIRROR":      "${{ env.LAZYCAT_GHCR_MIRROR || vars.LAZYCAT_GHCR_MIRROR }}",
+		"LAZYCAT_REGISTRY_MIRRORS": "${{ env.LAZYCAT_REGISTRY_MIRRORS || vars.LAZYCAT_REGISTRY_MIRRORS }}",
+	} {
+		if got := document.Runs.Steps[0].Environment[name]; got != want {
+			t.Fatalf("action env %s=%#v want=%q", name, got, want)
+		}
+	}
+	if got := actionBootstrapVersion(t); got != "v1.2.6" {
+		t.Fatalf("action.yml bootstrap version=%q, want v1.2.6", got)
 	}
 }
 

@@ -45,7 +45,12 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	result, err := action.Run(ctx, input, action.DefaultDependencies(host))
+	dependencies, err := action.DefaultDependenciesWithEnv(host, getenv)
+	if err != nil {
+		fmt.Fprintf(stderr, "%s: %s\n", action.CodeConfigInvalid, err)
+		return 1
+	}
+	result, err := action.Run(ctx, input, dependencies)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1

@@ -28,6 +28,17 @@ jobs:
 
 Keep `update.strategy: pull`. This uploads a validation Artifact and creates/updates a PR. It does not publish stores.
 
+For mirror delivery, the reusable workflow first accepts optional `docker-mirror`, `ghcr-mirror`, and `registry-mirrors` inputs, then reads GitHub Variables named `LAZYCAT_DOCKER_MIRROR`, `LAZYCAT_GHCR_MIRROR`, and `LAZYCAT_REGISTRY_MIRRORS`. Missing inputs and Variables resolve to an empty string and fall back to a historical `image_template` or the built-in Docker Hub/GHCR defaults:
+
+```yaml
+with:
+  docker-mirror: mirror.example/docker
+  ghcr-mirror: mirror.example/ghcr
+  registry-mirrors: quay.io=mirror.example/quay
+```
+
+These ordinary inputs and GitHub Variables contain only public Registry/path prefixes, never Registry credentials. The Composite Action reads the same GitHub Variables and lets corresponding job/step environment variables override them.
+
 For `operation: auto`, a manual `workflow_dispatch` checks an image version source but builds a Git version source, reading `package.yml.version` when no explicit version is supplied. Set the reusable workflow input `version: 1.2.3` to request an explicit build version. Tag pushes build and schedules check images. Explicit operations otherwise keep their requested behavior, but `check` rejects Tag and Release events before image inspection or delivery.
 
 ## Tag source build

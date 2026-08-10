@@ -739,7 +739,6 @@ func TestLoadRejectsInvalidImageConfiguration(t *testing.T) {
 		{name: "nightly missing regex", image: "id: web\ntarget: service\nservice: web\nsource: ghcr.io/acme/web\nchannel: nightly", wantErr: "tag_regex is required"},
 		{name: "custom missing sort", image: "id: web\ntarget: service\nservice: web\nsource: ghcr.io/acme/web\nchannel: custom\ntag_regex: edge", wantErr: "sort is required"},
 		{name: "bad regex", image: "id: web\ntarget: service\nservice: web\nsource: ghcr.io/acme/web\ntag_regex: '['", wantErr: "invalid tag_regex"},
-		{name: "mirror missing template", image: "id: web\ntarget: service\nservice: web\nsource: ghcr.io/acme/web\ndelivery:\n  mode: mirror", wantErr: "image_template is required"},
 		{name: "official direct", image: "id: web\ntarget: service\nservice: web\nsource: ghcr.io/acme/web\ndelivery:\n  mode: direct", stores: "official:\n    enabled: true", wantErr: "official store requires lazycat"},
 	}
 	for _, test := range tests {
@@ -756,6 +755,33 @@ func TestLoadRejectsInvalidImageConfiguration(t *testing.T) {
 				t.Fatalf("err=%v yaml=\n%s", err, yaml)
 			}
 		})
+	}
+}
+
+func TestLoadAllowsMirrorToResolveSourceAndTemplateAtRuntime(t *testing.T) {
+	filename := filepath.Join(t.TempDir(), "lazycat.yml")
+	data := []byte(`version: 1
+project: {}
+update:
+  version_source:
+    type: image
+    image: web
+images:
+  - id: web
+    target: service
+    service: web
+    delivery:
+      mode: mirror
+`)
+	if err := os.WriteFile(filename, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Images[0].Source != "" || loaded.Images[0].Delivery.ImageTemplate != "" {
+		t.Fatalf("image=%#v", loaded.Images[0])
 	}
 }
 

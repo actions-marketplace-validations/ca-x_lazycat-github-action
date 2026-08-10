@@ -113,7 +113,7 @@ For every managed image, set:
 
 - stable `id`;
 - `target: service` plus exact `service`, or `target: application` with no service;
-- upstream `source`;
+- upstream `source` for new configurations; an existing mirror migration may recover it only from a preserved Manifest `upstream` comment or a recognized mirror prefix;
 - channel and filters;
 - delivery mode.
 
@@ -123,9 +123,15 @@ Delivery policy:
 |---|---|---:|---:|
 | `lazycat` | Remote copy to `registry.lazycat.cloud` | Not required | Allowed |
 | `direct` | Manifest uses upstream reference | Not required | Forbidden |
-| `mirror` | Manifest uses explicit accelerator template | Not required | Forbidden |
+| `mirror` | Manifest uses a default, configured, or historical accelerator template | Not required | Forbidden |
 
 Set `require_digest_match: true` for mirrors when the accelerator must contain exactly the source image for `project.target_arch`.
+
+For new mirror configurations, keep `source` explicit and omit `image_template` when the built-in defaults are intended: Docker Hub maps to `docker.1ms.run` and GHCR maps to `ghcr.1ms.run`. Preserve an existing hand-written `image_template`; it remains effective when no runtime override is configured. Do not bulk-rewrite historical `.github/lazycat-action.yml` files merely to adopt the defaults.
+
+Inspect existing Manifest image values and `upstream` comments before migrating mirror configuration. A missing source may be recovered from `upstream`, from `docker.1ms.run/...` as `docker.io/...`, from `ghcr.1ms.run/...` as `ghcr.io/...`, or from a prefix declared in `LAZYCAT_REGISTRY_MIRRORS`. If none is unambiguous, STOP instead of guessing. The Action performs this resolution before Registry access and does not write the recovered source back to Action configuration.
+
+Use runtime overrides only when the project or organization needs a different accelerator. The reusable workflow and Composite Action automatically read GitHub Variables named `LAZYCAT_DOCKER_MIRROR`, `LAZYCAT_GHCR_MIRROR`, and `LAZYCAT_REGISTRY_MIRRORS`; missing Variables are empty and trigger fallback. Reusable inputs `docker-mirror`, `ghcr-mirror`, and `registry-mirrors`, or same-named composite job/step environment variables, override GitHub Variables. The generic value is comma-separated `registry=mirror-prefix`, such as `quay.io=mirror.example/quay`. Prefixes omit `https://`. Precedence is workflow input or composite environment, GitHub Variable, existing `image_template`, then the Docker Hub/GHCR built-in default. Other registries require an explicit generic mapping.
 
 A version-discovery rule must match a release family that can produce future candidates. Inspect representative upstream tags before choosing the channel, filter, mapping, and sort. Do not generate an exact immutable SemVer filter such as `^2\.2\.0$`; it selects only the already-known version, so scheduled checks can never discover `2.2.1`, `2.3.0`, or another later release. Use these shapes instead:
 

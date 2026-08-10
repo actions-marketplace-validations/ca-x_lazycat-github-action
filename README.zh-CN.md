@@ -345,16 +345,28 @@ Action 把选中的源镜像提交给懒猫开发者平台，并把 `Platform` �
 
 该模式优先使用 `LZC_API_TOKEN` 中的 PAT；历史 workflow 可以继续使用 `LAZYCAT_TOKEN` 中的 lzc-cli 会话 token。PAT 认证的 `LZC_API_HOST` 默认使用 `appstore.api.lazycat.cloud`，可通过环境变量覆盖。启用官方商店模式时只能使用这种交付方式。
 
-### 显式镜像加速地址
+### 可配置的 Registry 镜像源
 
 ```yaml
 delivery:
   mode: mirror
-  image_template: ghcr.1ms.run/acme/example-web:{tag}
   require_digest_match: true
 ```
 
-Manifest 会使用展开后的镜像地址。模板支持 `{tag}`、`{digest}` 和 `{source}`。启用 `require_digest_match` 后，Action 会检查 mirror 中与项目目标平台对应的镜像，只有 digest 与源镜像一致才会修改 Manifest。
+省略 `image_template` 时，Docker Hub 默认使用 `docker.1ms.run`，GHCR 默认使用 `ghcr.1ms.run`。历史配置可以继续保留手写的 `image_template`；没有环境变量覆盖时不会改变。模板支持 `{tag}`、`{digest}` 和 `{source}`。启用 `require_digest_match` 后，Action 会检查 mirror 中与项目目标平台对应的镜像，只有 digest 与源镜像一致才会修改 Manifest。
+
+Reusable workflow 会自动读取名为 `LAZYCAT_DOCKER_MIRROR`、`LAZYCAT_GHCR_MIRROR` 和 `LAZYCAT_REGISTRY_MIRRORS` 的 GitHub Repository/Organization Variables。未定义的 Variable 会解析为空字符串并安全 fallback。调用方也可以通过可选 workflow input 对单次调用进行覆盖：
+
+```yaml
+with:
+  docker-mirror: mirror.example/docker
+  ghcr-mirror: mirror.example/ghcr
+  registry-mirrors: quay.io=mirror.example/quay,registry.example.com=mirror.example/registry
+```
+
+Composite Action 会读取相同的 GitHub Variables，并允许同名 job/step 环境变量覆盖它们。值是不能带 URL scheme 的 Registry/path 前缀。优先级依次为 reusable-workflow input 或 composite 环境变量、GitHub Variable、历史 `image_template`、Docker Hub/GHCR 内置默认值。环境变量缺失或为空不是错误。其他 Registry 必须在 `LAZYCAT_REGISTRY_MIRRORS` 中配置映射。
+
+迁移历史项目时，mirror 模式可以从 Manifest 的 `upstream` 注释或已知的内置/自定义 mirror 地址恢复省略的 `source`。例如 `docker.1ms.run/acme/api:v1` 会恢复为 `docker.io/acme/api`。Action 不会回写 `.github/lazycat-action.yml`；无法无歧义恢复上游时，会在查询 Registry 或修改 Manifest 前安全失败。
 
 ### 直接使用源镜像
 

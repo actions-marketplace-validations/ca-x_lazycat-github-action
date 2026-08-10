@@ -236,7 +236,7 @@ func validate(value Config) error {
 			return fmt.Errorf("duplicate image id %q", image.ID)
 		}
 		images[image.ID] = struct{}{}
-		if image.Source == "" {
+		if image.Source == "" && image.Delivery.Mode != "mirror" {
 			return fmt.Errorf("image %q source is required", image.ID)
 		}
 		if image.MaxTags < 0 || image.MaxTags > 50000 {
@@ -452,9 +452,6 @@ func validateImageRule(image Image) error {
 			return fmt.Errorf("require_digest_match is only valid for mirror delivery")
 		}
 	case "mirror":
-		if image.Delivery.ImageTemplate == "" {
-			return errors.New("image_template is required for mirror delivery")
-		}
 	default:
 		return fmt.Errorf("unsupported delivery mode %q", image.Delivery.Mode)
 	}

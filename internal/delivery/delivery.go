@@ -7,8 +7,11 @@ import (
 	"strings"
 
 	"github.com/ca-x/lazycat-github-action/internal/config"
+	"github.com/ca-x/lazycat-github-action/internal/imagemirror"
+	"github.com/ca-x/lazycat-github-action/internal/manifestedit"
 	"github.com/ca-x/lazycat-github-action/internal/platform"
 	"github.com/ca-x/lazycat-github-action/internal/registry"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/lib-x/lzc-toolkit-go/appstore"
 )
 
@@ -50,6 +53,40 @@ type Result struct {
 type Resolver struct {
 	Copier    Copier
 	Inspector ImageInspector
+	Mirrors   imagemirror.Resolver
+}
+
+// ResolveImage fills mirror configuration from the explicit source, the
+// Manifest upstream comment, or a known runtime mirror, in that order.
+func (resolver Resolver) ResolveImage(image config.Image, current manifestedit.Current) (config.Image, error) {
+	if image.Delivery.Mode != "mirror" {
+		return image, nil
+	}
+	if strings.TrimSpace(image.Source) == "" && strings.TrimSpace(current.UpstreamRef) != "" {
+		reference, err := name.ParseReference(strings.TrimSpace(current.UpstreamRef), name.WeakValidation)
+		if err != nil {
+			return config.Image{}, fmt.Errorf("image %q parse Manifest upstream reference: %w", image.ID, err)
+		}
+		image.Source = canonicalRepository(reference.Context())
+	}
+	if strings.TrimSpace(image.Source) == "" && strings.TrimSpace(current.RuntimeRef) != "" {
+		source, found, err := resolver.Mirrors.ExtractSource(current.RuntimeRef)
+		if err != nil {
+			return config.Image{}, fmt.Errorf("image %q extract source from runtime reference: %w", image.ID, err)
+		}
+		if found {
+			image.Source = source
+		}
+	}
+	if strings.TrimSpace(image.Source) == "" {
+		return config.Image{}, fmt.Errorf("image %q source cannot be recovered from configuration or Manifest", image.ID)
+	}
+	template, err := resolver.Mirrors.Template(image.Source, image.Delivery.ImageTemplate)
+	if err != nil {
+		return config.Image{}, fmt.Errorf("image %q resolve mirror template: %w", image.ID, err)
+	}
+	image.Delivery.ImageTemplate = template
+	return image, nil
 }
 
 func (resolver Resolver) Deliver(ctx context.Context, request Request) (Result, error) {
@@ -85,7 +122,11 @@ func (resolver Resolver) Deliver(ctx context.Context, request Request) (Result, 
 		}
 		return Result{Mode: mode, RuntimeRef: request.SourceRef}, nil
 	case "mirror":
-		runtimeRef, err := expandTemplate(request.Image.Delivery.ImageTemplate, request)
+		template, err := resolver.Mirrors.Template(request.Image.Source, request.Image.Delivery.ImageTemplate)
+		if err != nil {
+			return Result{}, fmt.Errorf("resolve mirror template: %w", err)
+		}
+		runtimeRef, err := expandTemplate(template, request)
 		if err != nil {
 			return Result{}, err
 		}
@@ -196,6 +237,18 @@ func (resolver Resolver) Deliver(ctx context.Context, request Request) (Result, 
 	default:
 		return Result{}, fmt.Errorf("unsupported image delivery mode %q", mode)
 	}
+}
+
+func canonicalRepository(repository name.Repository) string {
+	registry := repository.RegistryStr()
+	if registry == name.DefaultRegistry || registry == "index.docker.io" {
+		registry = "docker.io"
+	}
+	path := repository.RepositoryStr()
+	if registry == "docker.io" && !strings.Contains(path, "/") {
+		path = "library/" + path
+	}
+	return registry + "/" + path
 }
 
 func (resolver Resolver) inspect(ctx context.Context, reference string, target platform.Target) (registry.Image, error) {
