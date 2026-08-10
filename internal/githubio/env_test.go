@@ -64,6 +64,67 @@ func TestReadInputReadsReleaseTagFromEventFile(t *testing.T) {
 	}
 }
 
+func TestReadInputRejectsExplicitVersionThatConflictsWithTagEvent(t *testing.T) {
+	environment := map[string]string{
+		"INPUT_VERSION":     "2.0.0",
+		"GITHUB_EVENT_NAME": "push",
+		"GITHUB_REF_TYPE":   "tag",
+		"GITHUB_REF_NAME":   "v1.2.3",
+	}
+	if _, err := githubio.ReadInput(func(key string) string { return environment[key] }); err == nil || !strings.Contains(err.Error(), "does not match event version") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestReadInputRejectsExplicitVersionThatConflictsWithReleaseEvent(t *testing.T) {
+	eventFile := filepath.Join(t.TempDir(), "event.json")
+	if err := os.WriteFile(eventFile, []byte(`{"release":{"tag_name":"v1.2.3"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	environment := map[string]string{
+		"INPUT_VERSION":     "2.0.0",
+		"GITHUB_EVENT_NAME": "release",
+		"GITHUB_EVENT_PATH": eventFile,
+	}
+	if _, err := githubio.ReadInput(func(key string) string { return environment[key] }); err == nil || !strings.Contains(err.Error(), "does not match event version") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestReadInputRejectsNonCanonicalEventTags(t *testing.T) {
+	tests := []map[string]string{
+		{
+			"GITHUB_EVENT_NAME": "push",
+			"GITHUB_REF_TYPE":   "tag",
+			"GITHUB_REF_NAME":   "1.2.3",
+		},
+		{
+			"GITHUB_EVENT_NAME": "workflow_dispatch",
+			"GITHUB_REF_TYPE":   "tag",
+			"GITHUB_REF_NAME":   "1.2.3",
+		},
+	}
+	for _, environment := range tests {
+		if _, err := githubio.ReadInput(func(key string) string { return environment[key] }); err == nil || !strings.Contains(err.Error(), "must use canonical form") {
+			t.Fatalf("environment=%#v err=%v", environment, err)
+		}
+	}
+}
+
+func TestReadInputRejectsNonCanonicalReleaseTag(t *testing.T) {
+	eventFile := filepath.Join(t.TempDir(), "event.json")
+	if err := os.WriteFile(eventFile, []byte(`{"release":{"tag_name":"1.2.3"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	environment := map[string]string{
+		"GITHUB_EVENT_NAME": "release",
+		"GITHUB_EVENT_PATH": eventFile,
+	}
+	if _, err := githubio.ReadInput(func(key string) string { return environment[key] }); err == nil || !strings.Contains(err.Error(), "must use canonical form") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestWriteOutputsUsesStableKeysAndDoesNotLeakSecrets(t *testing.T) {
 	for key, value := range map[string]string{
 		"LAZYCAT_TOKEN": "lazycat-secret", "LZC_CLI_TOKEN": "cli-secret", "LAZYCAT_PASSWORD": "password-secret",

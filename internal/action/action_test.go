@@ -630,20 +630,28 @@ func TestRunAcceptsConfiguredARM64BuildResult(t *testing.T) {
 }
 
 func TestResolveOperation(t *testing.T) {
+	git := gitConfig()
+	image := gitConfig()
+	image.Update.VersionSource = config.VersionSource{Type: config.VersionSourceImage, Image: "web"}
+
 	tests := []struct {
 		name  string
 		input action.Input
+		cfg   config.Config
 		want  action.Operation
 	}{
-		{name: "release", input: action.Input{Operation: action.OperationAuto, EventName: "release"}, want: action.OperationBuild},
-		{name: "tag", input: action.Input{Operation: action.OperationAuto, EventName: "push", RefType: "tag", RefName: "v1.2.3"}, want: action.OperationBuild},
-		{name: "manual image check", input: action.Input{Operation: action.OperationAuto, EventName: "workflow_dispatch"}, want: action.OperationCheck},
-		{name: "manual version build", input: action.Input{Operation: action.OperationAuto, EventName: "workflow_dispatch", Version: "1.2.3"}, want: action.OperationBuild},
-		{name: "schedule", input: action.Input{Operation: action.OperationAuto, EventName: "schedule"}, want: action.OperationCheck},
+		{name: "release", input: action.Input{Operation: action.OperationAuto, EventName: "release"}, cfg: git, want: action.OperationBuild},
+		{name: "manual git build", input: action.Input{Operation: action.OperationAuto, EventName: "workflow_dispatch"}, cfg: git, want: action.OperationBuild},
+		{name: "manual image check", input: action.Input{Operation: action.OperationAuto, EventName: "workflow_dispatch"}, cfg: image, want: action.OperationCheck},
+		{name: "manual explicit version build", input: action.Input{Operation: action.OperationAuto, EventName: "workflow_dispatch", Version: "1.2.3"}, cfg: image, want: action.OperationBuild},
+		{name: "tag git build", input: action.Input{Operation: action.OperationAuto, EventName: "push", RefType: "tag", RefName: "v1.2.3"}, cfg: git, want: action.OperationBuild},
+		{name: "scheduled image check", input: action.Input{Operation: action.OperationAuto, EventName: "schedule"}, cfg: image, want: action.OperationCheck},
+		{name: "explicit check unchanged", input: action.Input{Operation: action.OperationCheck, EventName: "workflow_dispatch"}, cfg: git, want: action.OperationCheck},
+		{name: "explicit build unchanged", input: action.Input{Operation: action.OperationBuild, EventName: "schedule"}, cfg: image, want: action.OperationBuild},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := action.ResolveOperation(test.input)
+			got, err := action.ResolveOperation(test.input, test.cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -791,12 +799,14 @@ func TestRunPreservesStructuredImageDeliveryError(t *testing.T) {
 	}
 }
 
-func TestRunBuildUsesCurrentPackageVersionWhenInputIsEmpty(t *testing.T) {
+func TestRunAutoManualGitBuildUsesCurrentPackageVersionWhenInputIsEmpty(t *testing.T) {
 	root := t.TempDir()
+	cfg := gitConfig()
+	cfg.Update.Strategy = config.StrategyPublish
 	deps := action.Dependencies{
 		Host:       platform.Host{OS: "linux", Arch: "amd64"},
 		ResultDir:  filepath.Join(root, "results"),
-		LoadConfig: func(string) (config.Config, error) { return gitConfig(), nil },
+		LoadConfig: func(string) (config.Config, error) { return cfg, nil },
 		Inspect: func(context.Context, config.Project) (project.Info, error) {
 			return project.Info{Root: root, PackageFile: filepath.Join(root, "package.yml"), Output: filepath.Join(root, "dist", "app.lpk"), PackageID: "cloud.lazycat.example", Version: "1.2.3"}, nil
 		},
@@ -810,11 +820,11 @@ func TestRunBuildUsesCurrentPackageVersionWhenInputIsEmpty(t *testing.T) {
 			return actionbuild.Result{Path: request.Project.Output, PackageID: request.Project.PackageID, Version: request.Version, SHA256: strings.Repeat("a", 64), TargetPlatform: "linux/amd64"}, nil
 		},
 	}
-	result, err := action.Run(context.Background(), action.Input{Operation: action.OperationBuild}, deps)
+	result, err := action.Run(context.Background(), action.Input{Operation: action.OperationAuto, EventName: "workflow_dispatch"}, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Version != "1.2.3" || result.Tag != "v1.2.3" {
+	if result.Operation != "build" || result.Version != "1.2.3" || result.Tag != "v1.2.3" || result.UpdateStrategy != "publish" {
 		t.Fatalf("result=%#v", result)
 	}
 }

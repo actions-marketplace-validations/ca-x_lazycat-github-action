@@ -234,7 +234,7 @@ func platformStoreClient(resolved platformauth.Result, options appstore.Options)
 	return appstore.New(options), nil
 }
 
-func ResolveOperation(input Input) (Operation, error) {
+func ResolveOperation(input Input, cfg config.Config) (Operation, error) {
 	operation := input.Operation
 	if operation == "" {
 		operation = OperationAuto
@@ -251,10 +251,10 @@ func ResolveOperation(input Input) (Operation, error) {
 	case "release":
 		return OperationBuild, nil
 	case "workflow_dispatch":
-		if input.Version == "" {
-			return OperationCheck, nil
+		if input.Version != "" || cfg.Update.VersionSource.Type == config.VersionSourceGit {
+			return OperationBuild, nil
 		}
-		return OperationBuild, nil
+		return OperationCheck, nil
 	case "push":
 		if input.RefType == "tag" || strings.HasPrefix(input.RefName, "v") {
 			return OperationBuild, nil
@@ -274,10 +274,6 @@ func Run(ctx context.Context, input Input, dependencies Dependencies) (Result, e
 	if err := validateDependencies(dependencies); err != nil {
 		return Result{}, actionError(CodeConfigInvalid, "Action dependencies are incomplete", err)
 	}
-	operation, err := ResolveOperation(input)
-	if err != nil {
-		return Result{}, actionError(CodeConfigInvalid, err.Error(), err)
-	}
 	if input.ConfigPath == "" {
 		input.ConfigPath = ".github/lazycat-action.yml"
 	}
@@ -285,6 +281,10 @@ func Run(ctx context.Context, input Input, dependencies Dependencies) (Result, e
 	cfg, err := dependencies.LoadConfig(input.ConfigPath)
 	if err != nil {
 		return Result{}, actionError(CodeConfigInvalid, "unable to load Action configuration", err)
+	}
+	operation, err := ResolveOperation(input, cfg)
+	if err != nil {
+		return Result{}, actionError(CodeConfigInvalid, err.Error(), err)
 	}
 	if err := validateWorkflowToolchains(input, cfg.Build.Toolchains); err != nil {
 		return Result{}, actionError(CodeConfigInvalid, "workflow toolchains do not match Action configuration", err)

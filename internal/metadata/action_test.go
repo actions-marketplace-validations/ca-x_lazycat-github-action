@@ -69,7 +69,7 @@ func TestReusableWorkflowContractAndActionRefs(t *testing.T) {
 		t.Fatalf("workflow_call=%#v", on["workflow_call"])
 	}
 	inputs, _ := call["inputs"].(map[string]any)
-	for _, name := range []string{"config", "operation", "runner", "image-id", "dry-run", "changelog", "toolchains", "go-version", "node-version", "rust-toolchain", "node-package-manager", "enable-qemu"} {
+	for _, name := range []string{"config", "operation", "runner", "image-id", "version", "dry-run", "changelog", "toolchains", "go-version", "node-version", "rust-toolchain", "node-package-manager", "enable-qemu"} {
 		if _, found := inputs[name]; !found {
 			t.Fatalf("missing workflow input %q", name)
 		}
@@ -116,6 +116,9 @@ func TestReusableWorkflowContractAndActionRefs(t *testing.T) {
 		t.Fatalf("reusable workflow internal Action refs=%d, want 4", internalActionRefs)
 	}
 	workflow := string(data)
+	if !strings.Contains(workflow, "version: ${{ inputs.version }}") {
+		t.Fatal("reusable workflow does not forward the explicit version input")
+	}
 	const patMapping = "LZC_API_TOKEN: ${{ secrets.LZC_API_TOKEN }}"
 	if count := strings.Count(workflow, patMapping); count != 3 {
 		t.Fatalf("reusable workflow PAT mapping count=%d, want 3", count)
@@ -126,7 +129,7 @@ func TestReusableWorkflowContractAndActionRefs(t *testing.T) {
 	}
 	for _, condition := range []string{
 		"steps.lazycat.outputs.operation == 'check' && steps.lazycat.outputs.changed == 'true' && steps.lazycat.outputs.update-strategy == 'pull'",
-		"steps.lazycat.outputs.operation == 'check' && steps.lazycat.outputs.changed == 'true' && steps.lazycat.outputs.update-strategy == 'publish'",
+		"(steps.lazycat.outputs.operation == 'check' || (steps.lazycat.outputs.operation == 'build' && github.ref_type == 'branch')) && steps.lazycat.outputs.changed == 'true' && steps.lazycat.outputs.update-strategy == 'publish'",
 	} {
 		if !strings.Contains(workflow, condition) {
 			t.Fatalf("workflow is missing operation-based update condition %q", condition)
@@ -374,8 +377,8 @@ func TestActionMetadataExposesStableContract(t *testing.T) {
 	if document.Runs.Using != "composite" {
 		t.Fatalf("runs.using=%q", document.Runs.Using)
 	}
-	if got := actionBootstrapVersion(t); got != "v1.2.3" {
-		t.Fatalf("action.yml bootstrap version=%q, want v1.2.3", got)
+	if got := actionBootstrapVersion(t); got != "v1.2.4" {
+		t.Fatalf("action.yml bootstrap version=%q, want v1.2.4", got)
 	}
 }
 
@@ -435,12 +438,13 @@ func TestReusableWorkflowRecoversStalePublishRerunsAndRetriesReleaseReads(t *tes
 
 	commitStep := workflowStep(t, workflow, "Commit direct-publish update")
 	for _, required := range []string{
+		`if: (steps.lazycat.outputs.operation == 'check' || (steps.lazycat.outputs.operation == 'build' && github.ref_type == 'branch')) && steps.lazycat.outputs.changed == 'true'`,
 		`remote_ref="refs/remotes/origin/${GITHUB_REF_NAME}"`,
 		`git fetch --no-tags origin "+refs/heads/${GITHUB_REF_NAME}:${remote_ref}"`,
-		`git diff --quiet "${remote_ref}" -- "${PACKAGE_FILE}" "${MANIFEST_FILE}"`,
+		`git diff --quiet "${remote_ref}" --`,
 		`git reset --hard "${remote_ref}"`,
 		`if git push origin "HEAD:${GITHUB_REF_NAME}"; then`,
-		`if managed_files_match_remote; then`,
+		`if working_tree_matches_remote; then`,
 		`adopt_matching_remote`,
 		`echo "commit=$(git rev-parse HEAD)" >>"${GITHUB_OUTPUT}"`,
 	} {

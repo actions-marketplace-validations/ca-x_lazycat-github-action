@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -138,6 +140,52 @@ func TestFlowPublishesPrivateStoreWithEnvironmentAndMetadataDefaults(t *testing.
 	}
 	if result.Private == nil || result.Official != nil || options.BaseURL != "https://store.example.com" || options.Token != "lcst_secret" || published.AppID != "42" || published.Name != "Example" || published.Summary != "Example summary" || published.SHA256 != artifactSHA {
 		t.Fatalf("result=%#v options=%#v request=%#v", result, options, published)
+	}
+}
+
+func TestFlowRetriesTransientPrivateLookupBeforePublishing(t *testing.T) {
+	lookupAttempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/v1/packages/cloud.lazycat.example/latest-version" {
+			t.Fatalf("path=%q", request.URL.Path)
+		}
+		lookupAttempts++
+		if lookupAttempts == 1 {
+			http.Error(response, "transient upstream failure", http.StatusBadGateway)
+			return
+		}
+		_, _ = response.Write([]byte(`{"packageId":"cloud.lazycat.example","latestVersion":{"version":"1.2.2","createdAt":"2026-07-11T00:00:00Z"}}`))
+	}))
+	defer server.Close()
+
+	published := false
+	flow := publishflow.Flow{
+		Verify:        func(context.Context, lpkcheck.Request) (lpkcheck.Result, error) { return verifiedArtifact(), nil },
+		LookupVersion: storelookup.Default,
+		LookupEnv: func(name string) (string, bool) {
+			values := map[string]string{"APPSTORE_URL": server.URL, "APPSTORE_TOKEN": "lcst_secret"}
+			value, found := values[name]
+			return value, found
+		},
+		NewPrivate: func(private.Options) (publishflow.PrivatePublisher, error) {
+			return privatePublisherFunc(func(_ context.Context, request private.Request) (private.Result, error) {
+				published = true
+				return private.Result{Published: true, PackageID: request.PackageID, Version: request.Version, DownloadURL: request.DownloadURL, SHA256: request.SHA256}, nil
+			}), nil
+		},
+	}
+	cfg := publishConfig()
+	cfg.Stores.Private.Enabled = true
+	cfg.Stores.Private.SkipIfVersionExists = true
+	result, err := flow.Publish(context.Background(), publishflow.Request{
+		Target: publishflow.TargetPrivate, Config: cfg, Project: projectInfo(), LPKPath: "/repo/dist/app.lpk",
+		Version: "1.2.3", DownloadURL: "https://github.com/acme/example/releases/download/v1.2.3/app.lpk", ExpectedSHA256: artifactSHA,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lookupAttempts != 2 || !published || result.Private == nil || !result.Private.Published || result.Private.OnlineVersion != "1.2.2" {
+		t.Fatalf("lookupAttempts=%d published=%v result=%#v", lookupAttempts, published, result)
 	}
 }
 

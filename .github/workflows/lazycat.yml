@@ -9,7 +9,7 @@ on:
         required: false
         default: .github/lazycat-action.yml
       operation:
-        description: auto, check, build, publish-official, or publish-private.
+        description: auto, check, build, publish-official, or publish-private; auto uses the event and configured version source.
         type: string
         required: false
         default: auto
@@ -20,6 +20,11 @@ on:
         default: ubuntu-latest
       image-id:
         description: Optional configured image ID.
+        type: string
+        required: false
+        default: ""
+      version:
+        description: Optional manual application SemVer; auto builds when supplied.
         type: string
         required: false
         default: ""
@@ -295,6 +300,7 @@ jobs:
           operation: ${{ inputs.operation }}
           config: ${{ inputs.config }}
           image-id: ${{ inputs.image-id }}
+          version: ${{ inputs.version }}
           changelog: ${{ inputs.changelog }}
           dry-run: ${{ inputs.dry-run }}
 
@@ -351,7 +357,7 @@ jobs:
 
       - name: Commit direct-publish update
         id: direct-commit
-        if: steps.lazycat.outputs.operation == 'check' && steps.lazycat.outputs.changed == 'true' && steps.lazycat.outputs.update-strategy == 'publish' && !inputs.dry-run
+        if: (steps.lazycat.outputs.operation == 'check' || (steps.lazycat.outputs.operation == 'build' && github.ref_type == 'branch')) && steps.lazycat.outputs.changed == 'true' && steps.lazycat.outputs.update-strategy == 'publish' && !inputs.dry-run
         shell: bash
         env:
           VERSION: ${{ steps.lazycat.outputs.version }}
@@ -369,17 +375,17 @@ jobs:
           refresh_remote() {
             git fetch --no-tags origin "+refs/heads/${GITHUB_REF_NAME}:${remote_ref}"
           }
-          managed_files_match_remote() {
-            git diff --quiet "${remote_ref}" -- "${PACKAGE_FILE}" "${MANIFEST_FILE}"
+          working_tree_matches_remote() {
+            git diff --quiet "${remote_ref}" --
           }
           adopt_matching_remote() {
-            echo "Remote branch already contains the exact managed-file update; continuing from ${remote_ref}."
+            echo "Remote branch already contains the exact candidate tree; continuing from ${remote_ref}."
             git reset --hard "${remote_ref}"
             write_commit_output
           }
 
           refresh_remote
-          if managed_files_match_remote; then
+          if working_tree_matches_remote; then
             adopt_matching_remote
             exit 0
           fi
@@ -392,11 +398,11 @@ jobs:
           fi
 
           refresh_remote
-          if managed_files_match_remote; then
+          if working_tree_matches_remote; then
             adopt_matching_remote
             exit 0
           fi
-          echo "Direct-publish push failed and the remote managed files differ from this update; refusing to overwrite concurrent changes." >&2
+          echo "Direct-publish push failed and the remote tree differs from this candidate; refusing to publish a stale artifact." >&2
           exit 1
 
       - name: Classify Release work

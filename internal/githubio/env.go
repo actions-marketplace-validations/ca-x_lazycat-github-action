@@ -60,15 +60,38 @@ func ReadInput(getenv func(string) string) (action.Input, error) {
 	}
 
 	rawVersion := strings.TrimSpace(getenv("INPUT_VERSION"))
-	if rawVersion == "" && input.RefType == "tag" {
-		rawVersion = input.RefName
+	eventVersion := ""
+	if input.RefType == "tag" {
+		eventVersion = input.RefName
 	}
-	if rawVersion == "" && input.EventName == "release" {
+	if input.EventName == "release" {
 		tag, err := releaseTag(strings.TrimSpace(getenv("GITHUB_EVENT_PATH")))
 		if err != nil {
 			return action.Input{}, err
 		}
-		rawVersion = tag
+		eventVersion = tag
+	}
+	eventCanonicalVersion := ""
+	if eventVersion != "" {
+		version, tag, err := normalizeVersion(eventVersion)
+		if err != nil {
+			return action.Input{}, fmt.Errorf("invalid event version: %w", err)
+		}
+		if eventVersion != tag {
+			return action.Input{}, fmt.Errorf("event version tag %q must use canonical form %q", eventVersion, tag)
+		}
+		eventCanonicalVersion = version
+	}
+	if rawVersion == "" {
+		rawVersion = eventVersion
+	} else if eventVersion != "" {
+		version, _, err := normalizeVersion(rawVersion)
+		if err != nil {
+			return action.Input{}, err
+		}
+		if version != eventCanonicalVersion {
+			return action.Input{}, fmt.Errorf("input version %q does not match event version %q", version, eventCanonicalVersion)
+		}
 	}
 	if rawVersion != "" {
 		version, tag, err := normalizeVersion(rawVersion)

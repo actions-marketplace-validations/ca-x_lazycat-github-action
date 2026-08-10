@@ -43,8 +43,20 @@ archive="lazycat-action_linux_${arch}.tar.gz"
 release_repository="${GITHUB_ACTION_REPOSITORY:-ca-x/lazycat-github-action}"
 base_url="${LAZYCAT_ACTION_RELEASE_BASE_URL:-https://github.com/${release_repository}/releases/download/${version}}"
 
-curl -fsSL "${base_url}/${archive}" -o "${tmp}/${archive}"
-curl -fsSL "${base_url}/checksums.txt" -o "${tmp}/checksums.txt"
+curl_args=(
+  --fail
+  --silent
+  --show-error
+  --location
+  --retry 4
+  --retry-all-errors
+  --retry-delay 0
+  --retry-max-time 300
+  --connect-timeout 15
+  --max-time 60
+)
+curl "${curl_args[@]}" "${base_url}/${archive}" -o "${tmp}/${archive}"
+curl "${curl_args[@]}" "${base_url}/checksums.txt" -o "${tmp}/checksums.txt"
 
 if ! (cd "${tmp}" && grep -E "^[0-9a-fA-F]{64}  ${archive}$" checksums.txt | sha256sum --check --status); then
   echo "checksum verification failed for ${archive}" >&2

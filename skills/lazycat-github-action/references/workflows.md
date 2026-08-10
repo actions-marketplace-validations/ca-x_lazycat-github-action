@@ -28,6 +28,8 @@ jobs:
 
 Keep `update.strategy: pull`. This uploads a validation Artifact and creates/updates a PR. It does not publish stores.
 
+For `operation: auto`, a manual `workflow_dispatch` checks an image version source but builds a Git version source, reading `package.yml.version` when no explicit version is supplied. Set the reusable workflow input `version: 1.2.3` to request an explicit build version. Tag pushes build, schedules check images, and explicit operations keep their requested behavior.
+
 ## Tag source build
 
 ```yaml
@@ -191,4 +193,4 @@ Replace legacy v4 checkout/setup-node steps when updating an existing caller-own
 
 The LPK path must remain under the project root. The Action reopens the LPK, checks package/version, and computes SHA256 before sending store metadata.
 
-When `skip_if_version_exists` is enabled, `store-results` includes `skipped`, optional `onlineVersion`, and optional `skipReason`. Equal versions use `version-already-online`; valid SemVer online versions greater than the candidate use `online-version-newer` while `allow_downgrade: false`. Explicit rollback authorization continues publishing, and a non-SemVer value is compared only for exact equality. Decisions are independent per store and happen before write credentials are used; not-found publishes; other lookup failures stop. `dry-run` remains network-free.
+When `skip_if_version_exists` is enabled, `store-results` includes `skipped`, optional `onlineVersion`, and optional `skipReason`. Equal versions use `version-already-online`; valid SemVer online versions greater than the candidate use `online-version-newer` while `allow_downgrade: false`. Explicit rollback authorization continues publishing, and a non-SemVer value is compared only for exact equality. Decisions are independent per store and happen before write credentials are used. Status-less connection failures, HTTP 429, and HTTP 5xx receive up to three exponential-backoff attempts; not-found publishes; other errors or retry exhaustion stop. `dry-run` remains network-free.

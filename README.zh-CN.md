@@ -218,6 +218,8 @@ jobs:
 
 `strategy: pull` 是默认策略。发现新镜像后，workflow 只更新显式配置的目标，构建并校验 LPK，上传 Workflow Artifact，然后创建或更新 `lazycat/update-all`。
 
+使用 `operation: auto` 时，`workflow_dispatch` 会构建 Git 版本源项目（未提供版本输入时读取 `package.yml.version`），对镜像版本源项目则执行检查；手动显式提供版本始终执行构建。Tag push 执行构建，schedule 执行镜像检查，显式指定的 `check` 或 `build` 不受 auto 逻辑影响。
+
 如果只想处理一个镜像，可以传 `image-id`：
 
 ```yaml
@@ -506,7 +508,7 @@ stores:
 
 截图文件必须先提交并推送到 workflow 会 checkout 的 ref。Agent 可以使用 `agent-browser` 按项目确认的桌面端和移动端 viewport 截图，保存到 `.github/screenshots/` 等仓库目录后再运行 Action。Action 不会下载远程截图 URL。PC 端需要 2-8 张，移动端需要 3-8 张；输入只能是 PNG/JPEG，单张不超过 15 MiB，宽高均须在 320-3840 像素之间。图片会自动居中裁剪为 16:9 并转成 PNG 上传。越出 `project.root` 的路径、符号链接、非普通文件和不安全文件名都会被拒绝；错误只会安全展示仓库相对路径和允许公开的原因，不暴露 runner 路径或凭据。
 
-`skip_if_version_exists: true` 会在 LPK 校验完成后，通过精确包名匿名查询官方商店。版本相同时返回 `published: false`、`skipped: true` 和 `skipReason: version-already-online`。两者均为合法 SemVer、线上版本更高且 `update.allow_downgrade: false` 时，也会安全跳过并返回 `skipReason: online-version-newer`；只有显式设置 `allow_downgrade: true` 才继续执行回退提交。non-SemVer 值只判断精确相等，绝不按字符串猜测顺序。跳过时不会解析开发者 Token，也不会提交 LPK。应用不存在时继续发布；其他查询错误直接失败。该选项默认 `false`，`dry-run` 仍然完全不发起远端请求。
+`skip_if_version_exists: true` 会在 LPK 校验完成后，通过精确包名匿名查询官方商店。版本相同时返回 `published: false`、`skipped: true` 和 `skipReason: version-already-online`。两者均为合法 SemVer、线上版本更高且 `update.allow_downgrade: false` 时，也会安全跳过并返回 `skipReason: online-version-newer`；只有显式设置 `allow_downgrade: true` 才继续执行回退提交。non-SemVer 值只判断精确相等，绝不按字符串猜测顺序。跳过时不会解析开发者 Token，也不会提交 LPK。匿名查询对无 HTTP 状态的连接错误、HTTP 429 和 HTTP 5xx 进行最多三次指数退避尝试；应用不存在时继续发布，其他错误或重试耗尽后安全失败。该选项默认 `false`，`dry-run` 仍然完全不发起远端请求。
 
 设置 `LZC_APPSTORE_COS_DOMAIN` 时，版本查询使用该 COS 域名；未设置时使用生产目录。
 
@@ -543,7 +545,7 @@ PRIVATE_STORE_GROUP_CODES=ABC123,LATE23
 
 `APP_ID` 和 `PRIVATE_STORE_GROUP_CODES` 都是可选项。分组码属于访问凭据，必须以逗号分隔的 GitHub Secret 保存。它只用于匿名查询线上最新版本，由 toolkit 默认通过 `X-Group-Codes` 请求头发送，不会进入 Action inputs、outputs、summary 或结果 JSON。toolkit 会清除 Cookie jar 并禁止重定向，防止分组码被转发到其他来源。
 
-启用 `skip_if_version_exists: true` 后，Action 会在读取 `APPSTORE_TOKEN` 前通过精确包名查询喵喵商店。相等版本和线上更高的 SemVer 分别使用 `version-already-online`、`online-version-newer`，并且每个商店独立判断；应用不存在时继续发布，其他查询错误直接失败。真正发布时，如果没有 `APP_ID`，写客户端会先按 `packageId` 精确查找，再用 `stores.private.name` 调用带 Token 的 `GET /api/v1/apps/by-name?name=...` 接口。商店只返回当前 Token 有权上传版本的唯一精确同名应用；404 时创建新应用，同名歧义或鉴权错误直接停止。按名称解析出的历史应用可以保留不同的 `packageId`，Action 只使用其数字 ID 追加新的外部版本。提供 `APP_ID` 时，仍会先确认该应用的 `packageId` 与 LPK 一致。
+启用 `skip_if_version_exists: true` 后，Action 会在读取 `APPSTORE_TOKEN` 前通过精确包名查询喵喵商店。相等版本和线上更高的 SemVer 分别使用 `version-already-online`、`online-version-newer`，并且每个商店独立判断。无 HTTP 状态的连接错误、HTTP 429 和 HTTP 5xx 会进行最多三次指数退避尝试；应用不存在时继续发布，其他错误或重试耗尽后安全失败。真正发布时，如果没有 `APP_ID`，写客户端会先按 `packageId` 精确查找，再用 `stores.private.name` 调用带 Token 的 `GET /api/v1/apps/by-name?name=...` 接口。商店只返回当前 Token 有权上传版本的唯一精确同名应用；404 时创建新应用，同名歧义或鉴权错误直接停止。按名称解析出的历史应用可以保留不同的 `packageId`，Action 只使用其数字 ID 追加新的外部版本。提供 `APP_ID` 时，仍会先确认该应用的 `packageId` 与 LPK 一致。
 
 ### Release/商店对账
 

@@ -3,11 +3,14 @@ package storelookup_test
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ca-x/lazycat-github-action/internal/storelookup"
 	lpkgo "github.com/lib-x/lzc-toolkit-go"
@@ -72,6 +75,128 @@ func TestDefaultLooksUpPrivateVersionWithGroupCodes(t *testing.T) {
 	}
 }
 
+func TestDefaultRetriesTransientPrivateLatestVersionResponses(t *testing.T) {
+	for _, status := range []int{
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout,
+	} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			attempts := 0
+			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+				attempts++
+				if attempts == 1 {
+					http.Error(response, "transient upstream failure", status)
+					return
+				}
+				_, _ = response.Write([]byte(`{"packageId":"community.lazycat.example","latestVersion":{"version":"2.0.0","createdAt":"2026-07-11T00:00:00Z"}}`))
+			}))
+			defer server.Close()
+
+			result, err := storelookup.Default(context.Background(), storelookup.Request{
+				Store: storelookup.StorePrivate, PackageID: "community.lazycat.example", BaseURL: server.URL,
+				HTTPClient: server.Client(), Retry: storelookup.RetryPolicy{
+					MaxAttempts: 3, InitialDelay: time.Millisecond, MaxDelay: 2 * time.Millisecond,
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.OnlineVersion != "2.0.0" || attempts != 2 {
+				t.Fatalf("result=%#v attempts=%d", result, attempts)
+			}
+		})
+	}
+}
+
+func TestDefaultRetriesPrivateLatestVersionConnectionReset(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		_, _ = response.Write([]byte(`{"packageId":"community.lazycat.example","latestVersion":{"version":"2.0.0","createdAt":"2026-07-11T00:00:00Z"}}`))
+	}))
+	defer server.Close()
+
+	httpClient := *server.Client()
+	baseTransport := httpClient.Transport
+	httpClient.Transport = roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		attempts++
+		if attempts == 1 {
+			return nil, errors.New("read: connection reset by peer")
+		}
+		return baseTransport.RoundTrip(request)
+	})
+	result, err := storelookup.Default(context.Background(), storelookup.Request{
+		Store: storelookup.StorePrivate, PackageID: "community.lazycat.example", BaseURL: server.URL,
+		HTTPClient: &httpClient, Retry: storelookup.RetryPolicy{
+			MaxAttempts: 3, InitialDelay: time.Millisecond, MaxDelay: 2 * time.Millisecond,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.OnlineVersion != "2.0.0" || attempts != 2 {
+		t.Fatalf("result=%#v attempts=%d", result, attempts)
+	}
+}
+
+func TestDefaultRetriesPrivateLatestVersionResponseBodyReset(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		_, _ = response.Write([]byte(`{"packageId":"community.lazycat.example","latestVersion":{"version":"2.0.0","createdAt":"2026-07-11T00:00:00Z"}}`))
+	}))
+	defer server.Close()
+
+	httpClient := *server.Client()
+	baseTransport := httpClient.Transport
+	httpClient.Transport = roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		attempts++
+		if attempts == 1 {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(io.MultiReader(
+					strings.NewReader(`{"packageId":"community.lazycat.example"`),
+					resetReader{},
+				)),
+				Request: request,
+			}, nil
+		}
+		return baseTransport.RoundTrip(request)
+	})
+	result, err := storelookup.Default(context.Background(), storelookup.Request{
+		Store: storelookup.StorePrivate, PackageID: "community.lazycat.example", BaseURL: server.URL,
+		HTTPClient: &httpClient, Retry: storelookup.RetryPolicy{
+			MaxAttempts: 3, InitialDelay: time.Millisecond, MaxDelay: 2 * time.Millisecond,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.OnlineVersion != "2.0.0" || attempts != 2 {
+		t.Fatalf("result=%#v attempts=%d", result, attempts)
+	}
+}
+
+func TestDefaultStopsPrivateLatestVersionAfterRetryExhaustion(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		attempts++
+		http.Error(response, "transient upstream failure", http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	_, err := storelookup.Default(context.Background(), storelookup.Request{
+		Store: storelookup.StorePrivate, PackageID: "community.lazycat.example", BaseURL: server.URL,
+		HTTPClient: server.Client(), Retry: storelookup.RetryPolicy{
+			MaxAttempts: 3, InitialDelay: time.Millisecond, MaxDelay: 2 * time.Millisecond,
+		},
+	})
+	var toolkitError *lpkgo.Error
+	if !errors.As(err, &toolkitError) || toolkitError.StatusCode != http.StatusBadGateway || attempts != 3 {
+		t.Fatalf("err=%v attempts=%d", err, attempts)
+	}
+}
+
 func TestDefaultPreservesNotFound(t *testing.T) {
 	server := httptest.NewServer(http.NotFoundHandler())
 	defer server.Close()
@@ -111,4 +236,16 @@ func TestDefaultDoesNotFollowPrivateRedirect(t *testing.T) {
 	if err == nil || reached {
 		t.Fatalf("err=%v reached=%v", err, reached)
 	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (function roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return function(request)
+}
+
+type resetReader struct{}
+
+func (resetReader) Read([]byte) (int, error) {
+	return 0, errors.New("read: connection reset by peer")
 }

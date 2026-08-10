@@ -23,10 +23,40 @@ cat >"${fake_bin}/curl" <<'EOF'
 set -euo pipefail
 url=""
 output=""
+retry=0
+retry_all_errors=false
+connect_timeout=""
+max_time=""
+retry_max_time=""
+retry_delay=""
 while (($#)); do
   case "$1" in
     -o)
       output="$2"
+      shift 2
+      ;;
+    --retry)
+      retry="$2"
+      shift 2
+      ;;
+    --retry-all-errors)
+      retry_all_errors=true
+      shift
+      ;;
+    --connect-timeout)
+      connect_timeout="$2"
+      shift 2
+      ;;
+    --max-time)
+      max_time="$2"
+      shift 2
+      ;;
+    --retry-max-time)
+      retry_max_time="$2"
+      shift 2
+      ;;
+    --retry-delay)
+      retry_delay="$2"
       shift 2
       ;;
     -*)
@@ -40,6 +70,13 @@ while (($#)); do
 done
 printf '%s\n' "${url}" >>"${CURL_LOG}"
 name="${url##*/}"
+if [[ "${FLAKY_DOWNLOAD:-}" == "1" && "${name}" == lazycat-action_linux_*.tar.gz ]]; then
+  if ((retry != 4 || connect_timeout != 15 || max_time != 60 || retry_max_time != 300 || retry_max_time < max_time)) || [[ "${retry_all_errors}" != "true" || "${retry_delay}" != "0" ]]; then
+    echo "curl: (35) Recv failure: Connection reset by peer" >&2
+    exit 35
+  fi
+  printf '%s\n' "${url}" >>"${CURL_LOG}"
+fi
 if [[ "${BAD_CHECKSUM:-}" == "1" && "${name}" == "checksums.txt" ]]; then
   printf '%064d  lazycat-action_linux_amd64.tar.gz\n' 0 >"${output}"
 else
@@ -63,6 +100,11 @@ run_download_case() {
 
 run_download_case X64 amd64
 run_download_case ARM64 arm64
+
+: >"${tmp}/curl.log"
+output="$(PATH="${fake_bin}:${PATH}" FIXTURE_DIR="${fixtures}" CURL_LOG="${tmp}/curl.log" FLAKY_DOWNLOAD=1 RUNNER_OS=Linux RUNNER_ARCH=X64 LAZYCAT_ACTION_VERSION=v1.0.0 bash "${root}/scripts/run-action.sh")"
+test "$(grep -c 'lazycat-action_linux_amd64.tar.gz' "${tmp}/curl.log")" -eq 2
+grep -q "binary-amd64 target=linux/amd64" <<<"${output}"
 
 if RUNNER_OS=Windows RUNNER_ARCH=X64 bash "${root}/scripts/run-action.sh" >"${tmp}/windows.out" 2>"${tmp}/windows.err"; then
   echo "Windows runner unexpectedly succeeded" >&2

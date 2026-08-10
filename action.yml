@@ -8,7 +8,7 @@ branding:
 
 inputs:
   operation:
-    description: auto, check, build, publish-official, or publish-private.
+    description: auto, check, build, publish-official, or publish-private; auto uses the event and configured version source.
     required: false
     default: auto
   config:
@@ -110,7 +110,7 @@ runs:
       id: run
       shell: bash
       env:
-        LAZYCAT_ACTION_VERSION: v1.2.3
+        LAZYCAT_ACTION_VERSION: v1.2.4
         INPUT_OPERATION: ${{ inputs.operation }}
         INPUT_CONFIG: ${{ inputs.config }}
         INPUT_IMAGE_ID: ${{ inputs['image-id'] }}
