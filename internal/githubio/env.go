@@ -140,6 +140,8 @@ func WriteOutputs(writer io.Writer, result action.Result) error {
 		{key: "image-results", value: imageResults},
 		{key: "store-results", value: storeResults},
 		{key: "official-store-enabled", value: strconv.FormatBool(result.OfficialStoreEnabled)},
+		{key: "official-review-pending", value: strconv.FormatBool(result.OfficialReviewPending)},
+		{key: "official-review-version", value: result.OfficialReviewVersion},
 		{key: "private-store-enabled", value: strconv.FormatBool(result.PrivateStoreEnabled)},
 		{key: "update-strategy", value: result.UpdateStrategy},
 		{key: "channel", value: result.Channel},
@@ -172,7 +174,7 @@ func WriteStepSummary(writer io.Writer, result action.Result) error {
 	if writer == nil {
 		return errors.New("step summary writer is required")
 	}
-	_, err := fmt.Fprintf(writer, "## LazyCat Action\n\n- Action host: `linux/%s`\n- LazyCat target: `%s`\n- Package: `%s`\n- Version: `%s`\n- Channel: `%s`\n- Update strategy: `%s`\n- Changed: `%t`\n- LPK: `%s`\n", result.RunnerArch, result.TargetPlatform, result.PackageID, result.Version, result.Channel, result.UpdateStrategy, result.Changed, result.LPKPath)
+	_, err := fmt.Fprintf(writer, "## LazyCat Action\n\n- Action host: `linux/%s`\n- LazyCat target: `%s`\n- Package: `%s`\n- Version: `%s`\n- Channel: `%s`\n- Update strategy: `%s`\n- Changed: `%t`\n- Official review pending: `%t`\n- Official review version: `%s`\n- LPK: `%s`\n", result.RunnerArch, result.TargetPlatform, result.PackageID, result.Version, result.Channel, result.UpdateStrategy, result.Changed, result.OfficialReviewPending, result.OfficialReviewVersion, result.LPKPath)
 	return err
 }
 

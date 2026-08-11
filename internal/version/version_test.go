@@ -8,7 +8,7 @@ import (
 
 func TestInfoReportsToolkitAndCLICompatibility(t *testing.T) {
 	info := version.Info()
-	if info.ToolkitVersion != "v0.4.0" || info.ReferenceCLIVersion != "2.0.9" {
+	if info.ToolkitVersion != "v0.5.0" || info.ReferenceCLIVersion != "2.0.9" {
 		t.Fatalf("info=%#v", info)
 	}
 }

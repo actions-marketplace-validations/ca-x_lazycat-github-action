@@ -79,26 +79,28 @@ type Input struct {
 }
 
 type Result struct {
-	Operation            string          `json:"operation"`
-	Changed              bool            `json:"changed"`
-	PackageID            string          `json:"packageId"`
-	PackageFile          string          `json:"packageFile"`
-	ManifestFile         string          `json:"manifestFile"`
-	Version              string          `json:"version"`
-	Tag                  string          `json:"tag"`
-	LPKPath              string          `json:"lpkPath"`
-	SHA256               string          `json:"sha256"`
-	DownloadURL          string          `json:"downloadUrl,omitempty"`
-	ImageResults         json.RawMessage `json:"imageResults"`
-	StoreResults         json.RawMessage `json:"storeResults"`
-	UpdateStrategy       string          `json:"updateStrategy"`
-	OfficialStoreEnabled bool            `json:"officialStoreEnabled"`
-	PrivateStoreEnabled  bool            `json:"privateStoreEnabled"`
-	Channel              string          `json:"channel,omitempty"`
-	ResultFile           string          `json:"resultFile"`
-	RunnerArch           string          `json:"runnerArch"`
-	TargetPlatform       string          `json:"targetPlatform"`
-	Warnings             []lpkgo.Warning `json:"warnings,omitempty"`
+	Operation             string          `json:"operation"`
+	Changed               bool            `json:"changed"`
+	PackageID             string          `json:"packageId"`
+	PackageFile           string          `json:"packageFile"`
+	ManifestFile          string          `json:"manifestFile"`
+	Version               string          `json:"version"`
+	Tag                   string          `json:"tag"`
+	LPKPath               string          `json:"lpkPath"`
+	SHA256                string          `json:"sha256"`
+	DownloadURL           string          `json:"downloadUrl,omitempty"`
+	ImageResults          json.RawMessage `json:"imageResults"`
+	StoreResults          json.RawMessage `json:"storeResults"`
+	UpdateStrategy        string          `json:"updateStrategy"`
+	OfficialStoreEnabled  bool            `json:"officialStoreEnabled"`
+	OfficialReviewPending bool            `json:"officialReviewPending"`
+	OfficialReviewVersion string          `json:"officialReviewVersion,omitempty"`
+	PrivateStoreEnabled   bool            `json:"privateStoreEnabled"`
+	Channel               string          `json:"channel,omitempty"`
+	ResultFile            string          `json:"resultFile"`
+	RunnerArch            string          `json:"runnerArch"`
+	TargetPlatform        string          `json:"targetPlatform"`
+	Warnings              []lpkgo.Warning `json:"warnings,omitempty"`
 }
 
 type Error struct {
@@ -158,15 +160,16 @@ func (err *Error) Unwrap() error {
 }
 
 type Dependencies struct {
-	Host        platform.Host
-	ResultDir   string
-	Logger      *slog.Logger
-	LoadConfig  func(string) (config.Config, error)
-	Inspect     func(context.Context, config.Project) (project.Info, error)
-	SetVersion  func(string, string) (yamledit.Change, error)
-	Build       func(context.Context, actionbuild.Request) (actionbuild.Result, error)
-	CheckImages func(context.Context, imageflow.Request) (imageflow.Result, error)
-	Publish     func(context.Context, publishflow.Request) (publishflow.Result, error)
+	Host                 platform.Host
+	ResultDir            string
+	Logger               *slog.Logger
+	LoadConfig           func(string) (config.Config, error)
+	Inspect              func(context.Context, config.Project) (project.Info, error)
+	SetVersion           func(string, string) (yamledit.Change, error)
+	Build                func(context.Context, actionbuild.Request) (actionbuild.Result, error)
+	CheckImages          func(context.Context, imageflow.Request) (imageflow.Result, error)
+	WaitingReviewVersion func(context.Context, string) (string, bool, error)
+	Publish              func(context.Context, publishflow.Request) (publishflow.Result, error)
 }
 
 func DefaultDependencies(host platform.Host) Dependencies {
@@ -204,7 +207,18 @@ func DefaultDependenciesWithEnv(host platform.Host, getenv func(string) string) 
 		SetVersion:  yamledit.SetPackageVersion,
 		Build:       builder.Build,
 		CheckImages: imageFlow.Check,
-		Publish:     publishFlow.Publish,
+		WaitingReviewVersion: func(ctx context.Context, packageID string) (string, bool, error) {
+			resolved, err := resolver.Resolve(ctx)
+			if err != nil {
+				return "", false, err
+			}
+			client, err := platformStoreClient(resolved, appstore.Options{})
+			if err != nil {
+				return "", false, err
+			}
+			return client.WaitingReviewVersion(ctx, packageID)
+		},
+		Publish: publishFlow.Publish,
 	}, nil
 }
 
@@ -297,6 +311,10 @@ func Run(ctx context.Context, input Input, dependencies Dependencies) (Result, e
 	if err != nil {
 		return Result{}, actionError(CodeConfigInvalid, "unable to load Action configuration", err)
 	}
+	requestedOperation := input.Operation
+	if requestedOperation == "" {
+		requestedOperation = OperationAuto
+	}
 	operation, err := ResolveOperation(input, cfg)
 	if err != nil {
 		return Result{}, actionError(CodeConfigInvalid, err.Error(), err)
@@ -313,6 +331,30 @@ func Run(ctx context.Context, input Input, dependencies Dependencies) (Result, e
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	logger.Info("execution selected", "operation", operation, "mode", executionMode(operation, cfg), "package", info.PackageID, "version", info.Version, "project_kind", info.Kind, "target", cfg.Project.Target().Platform())
+	if shouldPauseForOfficialReview(input, requestedOperation, operation, cfg) {
+		if dependencies.WaitingReviewVersion == nil {
+			return Result{}, actionError(CodeConfigInvalid, "official waiting-review lookup dependency is unavailable", nil)
+		}
+		version, found, lookupErr := dependencies.WaitingReviewVersion(ctx, info.PackageID)
+		if lookupErr != nil {
+			return Result{}, mapWaitingReviewError(lookupErr)
+		}
+		if found {
+			input.Version = info.Version
+			if input.Tag == "" && info.Version != "" {
+				input.Tag = "v" + info.Version
+			}
+			result := baseResult(input, dependencies.Host, info, cfg)
+			result.Operation = string(operation)
+			result.OfficialReviewPending = true
+			result.OfficialReviewVersion = version
+			logger.Info("automatic direct publication paused for official review", "package", info.PackageID, "review_version", version)
+			if err := writeResult(&result, resultDirectory(dependencies.ResultDir, info.Root)); err != nil {
+				return Result{}, actionError(CodeStorePublishFailed, "unable to write paused Action result", err)
+			}
+			return result, nil
+		}
+	}
 	switch operation {
 	case OperationBuild:
 		return runBuild(ctx, input, cfg, info, dependencies)
@@ -323,6 +365,23 @@ func Run(ctx context.Context, input Input, dependencies Dependencies) (Result, e
 	default:
 		return Result{}, actionError(CodeConfigInvalid, fmt.Sprintf("unsupported operation %q", operation), nil)
 	}
+}
+
+func shouldPauseForOfficialReview(input Input, requested, resolved Operation, cfg config.Config) bool {
+	if input.DryRun || requested != OperationAuto || cfg.Update.Strategy != config.StrategyPublish || !cfg.Stores.Official.Enabled {
+		return false
+	}
+	if input.EventName != "schedule" && input.EventName != "workflow_dispatch" {
+		return false
+	}
+	return resolved == OperationCheck || resolved == OperationBuild
+}
+
+func mapWaitingReviewError(err error) *Error {
+	if errors.Is(err, lpkgo.ErrUnauthenticated) || errors.Is(err, lpkgo.ErrPermissionDenied) {
+		return actionError(CodeStoreAuthFailed, "official waiting-review authentication failed", err)
+	}
+	return actionError(CodeStorePublishFailed, "unable to query official waiting-review version", err)
 }
 
 func executionMode(operation Operation, cfg config.Config) string {

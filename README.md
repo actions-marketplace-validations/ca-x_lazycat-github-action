@@ -4,7 +4,7 @@
 
 `ca-x/lazycat-github-action` checks Docker image versions, updates explicit LazyCat Manifest targets, builds LPK files, creates update pull requests, and attaches validated LPK files to GitHub Releases.
 
-The Action uses [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.4.0`. Its compatibility baseline is `@lazycatcloud/lzc-cli` `2.0.9`.
+The Action uses [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.5.0`. Its compatibility baseline is `@lazycatcloud/lzc-cli` `2.0.9`.
 
 Current scope:
 
@@ -474,6 +474,8 @@ A successful scheduled or manual image check commits only the managed package an
 
 Direct publish creates the Git commit, tag, GitHub Release, and Release Asset. If a store is enabled, the reusable workflow then submits the verified LPK to that store. Store publishing never runs for `strategy: pull`.
 
+Before an automatic scheduled or manually dispatched direct publish, an enabled official store is queried through the authenticated developer API for an exact version awaiting review. If a review is pending, the run stops before image inspection or delivery and reports `official-review-pending: true` plus `official-review-version`; it does not edit, commit, push, tag, create a Release, or reconcile either store. The next automatic run resumes normally after the review clears. A missing review continues immediately. Authentication and remote failures fail closed instead of being treated as “no review.” Explicit operations, dry runs, pull-request updates, and Tag/Release publication keep their existing behavior.
+
 ## Store publishing
 
 Store publication happens only after the workflow has uploaded or safely reused a GitHub Release Asset and confirmed its GitHub-reported SHA256. Projects with no `services` or `images`, including static Web and Exec applications, use the same store flow.
@@ -755,6 +757,8 @@ These projects do not need an `images` section. Their version comes from the tag
 | `image-results` | JSON array of selected and delivered images |
 | `store-results` | JSON object containing official/private publication results |
 | `official-store-enabled` | Official store is enabled in configuration |
+| `official-review-pending` | Automatic direct publication paused because an official review is in progress |
+| `official-review-version` | Exact version currently awaiting official review, when present |
 | `private-store-enabled` | Private store is enabled in configuration |
 | `update-strategy` | `pull` or `publish` |
 | `channel` | Channel of the version-source image |

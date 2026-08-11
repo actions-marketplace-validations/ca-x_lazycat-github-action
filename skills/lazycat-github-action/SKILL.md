@@ -245,6 +245,8 @@ Both skip options default to false. When enabled, exact equality returns `publis
 
 For scheduled `publish` workflows, treat the exact versioned GitHub Release Asset as the delivery source of truth. If `<package-id>-v<version>.lpk` already exists for the current tag and a store lacks that version, download that exact asset beneath `project.root`, require a GitHub `sha256:` digest, recompute local SHA256, and publish the verified bytes. If a store already has the version, skip it independently. If the Release, exact asset name, or digest is missing, do not select another asset or infer another version; continue only through the normal build/Release path.
 
+Before an automatic scheduled or manually dispatched `publish` run with the official store enabled, query the authenticated developer API for the exact waiting-review version. A pending review pauses the whole automatic direct-publication run before image inspection or delivery: do not edit project files, commit, push, tag, create or reconcile a Release, or publish either store. Report `official-review-pending` and `official-review-version`; resume naturally on a later run after the review clears. A 404 means no pending review and continues. Authentication or remote errors fail closed. Do not apply this gate to explicit operations, dry runs, `pull` strategy, or Tag/Release publication.
+
 Organization Secrets must authorize the target repository. For the same Secret name, GitHub applies the most specific scope: Environment overrides Repository, and Repository overrides Organization. Use organization Secrets as shared defaults and repository Secrets only for intentional overrides; state the effective scope when reviewing a workflow with duplicate names.
 
 ## Verify the generated result

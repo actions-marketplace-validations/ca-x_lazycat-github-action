@@ -81,7 +81,7 @@ func TestReusableWorkflowContractAndActionRefs(t *testing.T) {
 		}
 	}
 	outputs, _ := call["outputs"].(map[string]any)
-	for _, name := range []string{"operation", "changed", "package-id", "package-file", "manifest-file", "version", "tag", "lpk-path", "sha256", "download-url", "image-results", "store-results", "official-store-enabled", "private-store-enabled", "update-strategy", "channel", "result-file", "runner-arch", "target-platform"} {
+	for _, name := range []string{"operation", "changed", "package-id", "package-file", "manifest-file", "version", "tag", "lpk-path", "sha256", "download-url", "image-results", "store-results", "official-store-enabled", "official-review-pending", "official-review-version", "private-store-enabled", "update-strategy", "channel", "result-file", "runner-arch", "target-platform"} {
 		if _, found := outputs[name]; !found {
 			t.Fatalf("missing workflow output %q", name)
 		}
@@ -384,7 +384,7 @@ func TestActionMetadataExposesStableContract(t *testing.T) {
 	if _, exists := document.Inputs["private-group-codes"]; exists {
 		t.Fatal("private group codes must be a secret/environment variable, not an Action input")
 	}
-	for _, output := range []string{"operation", "changed", "package-id", "package-file", "manifest-file", "version", "tag", "lpk-path", "sha256", "download-url", "image-results", "store-results", "official-store-enabled", "private-store-enabled", "update-strategy", "channel", "result-file", "runner-arch", "target-platform"} {
+	for _, output := range []string{"operation", "changed", "package-id", "package-file", "manifest-file", "version", "tag", "lpk-path", "sha256", "download-url", "image-results", "store-results", "official-store-enabled", "official-review-pending", "official-review-version", "private-store-enabled", "update-strategy", "channel", "result-file", "runner-arch", "target-platform"} {
 		if _, exists := document.Outputs[output]; !exists {
 			t.Fatalf("missing output %q", output)
 		}
@@ -407,8 +407,8 @@ func TestActionMetadataExposesStableContract(t *testing.T) {
 	if strings.Contains(string(data), "vars.") {
 		t.Fatal("composite action metadata must not reference the unsupported vars context")
 	}
-	if got := actionBootstrapVersion(t); got != "v1.2.7" {
-		t.Fatalf("action.yml bootstrap version=%q, want v1.2.7", got)
+	if got := actionBootstrapVersion(t); got != "v1.2.8" {
+		t.Fatalf("action.yml bootstrap version=%q, want v1.2.8", got)
 	}
 }
 
@@ -456,6 +456,28 @@ func TestReusableWorkflowRecoversMissingReleaseForUnchangedPublish(t *testing.T)
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("missing unchanged-publish Release recovery contract %q", required)
 		}
+	}
+}
+
+func TestReusableWorkflowPausesReleaseReconciliationForOfficialReview(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "lazycat.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := string(data)
+	classify := workflowStep(t, workflow, "Classify Release work")
+	for _, required := range []string{
+		"OFFICIAL_REVIEW_PENDING: ${{ steps.lazycat.outputs.official-review-pending }}",
+		"process.env.OFFICIAL_REVIEW_PENDING === 'true'",
+		"core.setOutput('should-release', 'false')",
+	} {
+		if !strings.Contains(classify, required) {
+			t.Fatalf("official-review Release gate is missing %q", required)
+		}
+	}
+	reconcile := workflowStep(t, workflow, "Locate existing Release Asset for store reconciliation")
+	if !strings.Contains(reconcile, "steps.lazycat.outputs.official-review-pending != 'true'") {
+		t.Fatal("store reconciliation must remain paused while an official review is pending")
 	}
 }
 

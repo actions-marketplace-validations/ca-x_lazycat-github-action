@@ -4,7 +4,7 @@
 
 `ca-x/lazycat-github-action` 用于检查 Docker 镜像版本、精确更新 LazyCat Manifest、构建 LPK、创建更新 Pull Request，并把校验后的 LPK 上传到 GitHub Release。
 
-Action 使用 [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.4.0`，兼容基线是 `@lazycatcloud/lzc-cli` `2.0.9`。
+Action 使用 [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.5.0`，兼容基线是 `@lazycatcloud/lzc-cli` `2.0.9`。
 
 当前交付范围：
 
@@ -470,6 +470,8 @@ update:
 
 直接发布会创建 Git commit、tag、GitHub Release 和 Release Asset。配置了商店时，reusable workflow 随后提交经过校验的 LPK。`strategy: pull` 永远不会发布商店。
 
+定时或手动触发的自动直发开始前，如果启用了官方商店，Action 会通过带认证的开发者 API 查询精确的审核中版本。存在审核任务时，本轮会在镜像检查或交付前暂停，输出 `official-review-pending: true` 与 `official-review-version`，且不会修改文件、commit、push、创建 tag/Release 或对任一商店执行补发；审核结束后的下一次自动运行会自然恢复。查询确认没有审核任务时立即继续。认证或远端查询失败会安全停止，绝不会误当成“没有审核”。显式 operation、dry-run、PR 更新以及 Tag/Release 发布保持原行为。
+
 ## 商店发布
 
 只有在 workflow 上传或安全复用 GitHub Release Asset，并确认 GitHub 返回的 SHA256 后，才会发布商店。没有 `services` 或 `images` 的静态 Web、Exec 应用同样使用这条发布链。
@@ -751,6 +753,8 @@ application:
 | `image-results` | 镜像选择和交付结果 JSON 数组 |
 | `store-results` | 官方和私有商店发布结果 JSON 对象 |
 | `official-store-enabled` | 配置是否启用官方商店 |
+| `official-review-pending` | 是否因官方商店存在审核任务而暂停自动直发 |
+| `official-review-version` | 当前官方商店审核中的精确版本号（如有） |
 | `private-store-enabled` | 配置是否启用私有商店 |
 | `update-strategy` | `pull` 或 `publish` |
 | `channel` | 驱动应用版本的镜像 Channel |

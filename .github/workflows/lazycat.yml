@@ -136,6 +136,10 @@ on:
         value: ${{ jobs.lazycat.outputs.store-results }}
       official-store-enabled:
         value: ${{ jobs.lazycat.outputs.official-store-enabled }}
+      official-review-pending:
+        value: ${{ jobs.lazycat.outputs.official-review-pending }}
+      official-review-version:
+        value: ${{ jobs.lazycat.outputs.official-review-version }}
       private-store-enabled:
         value: ${{ jobs.lazycat.outputs.private-store-enabled }}
       update-strategy:
@@ -174,6 +178,8 @@ jobs:
       image-results: ${{ steps.lazycat.outputs.image-results }}
       store-results: ${{ steps.store-results.outputs.store-results }}
       official-store-enabled: ${{ steps.lazycat.outputs.official-store-enabled }}
+      official-review-pending: ${{ steps.lazycat.outputs.official-review-pending }}
+      official-review-version: ${{ steps.lazycat.outputs.official-review-version }}
       private-store-enabled: ${{ steps.lazycat.outputs.private-store-enabled }}
       update-strategy: ${{ steps.lazycat.outputs.update-strategy }}
       channel: ${{ steps.lazycat.outputs.channel }}
@@ -435,9 +441,14 @@ jobs:
           UPDATE_STRATEGY: ${{ steps.lazycat.outputs.update-strategy }}
           CHANGED: ${{ steps.lazycat.outputs.changed }}
           DRY_RUN: ${{ inputs.dry-run }}
+          OFFICIAL_REVIEW_PENDING: ${{ steps.lazycat.outputs.official-review-pending }}
         with:
           retries: 3
           script: |
+            if (process.env.OFFICIAL_REVIEW_PENDING === 'true') {
+              core.setOutput('should-release', 'false');
+              return;
+            }
             if (context.ref.startsWith('refs/tags/') || context.eventName === 'release') {
               core.setOutput('should-release', process.env.LPK_PATH ? 'true' : 'false');
               return;
@@ -686,7 +697,7 @@ jobs:
 
       - name: Locate existing Release Asset for store reconciliation
         id: existing-asset
-        if: steps.asset-url.outputs.download-url == '' && steps.lazycat.outputs.update-strategy == 'publish' && (steps.lazycat.outputs.official-store-enabled == 'true' || steps.lazycat.outputs.private-store-enabled == 'true') && !inputs.dry-run
+        if: steps.asset-url.outputs.download-url == '' && steps.lazycat.outputs.official-review-pending != 'true' && steps.lazycat.outputs.update-strategy == 'publish' && (steps.lazycat.outputs.official-store-enabled == 'true' || steps.lazycat.outputs.private-store-enabled == 'true') && !inputs.dry-run
         uses: actions/github-script@v9
         env:
           RELEASE_TAG: ${{ steps.lazycat.outputs.tag }}

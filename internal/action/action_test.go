@@ -662,6 +662,68 @@ func TestResolveOperation(t *testing.T) {
 	}
 }
 
+func TestRunAutoPublishPausesBeforeImageWorkWhileOfficialReviewIsPending(t *testing.T) {
+	tests := []struct {
+		name          string
+		packageID     string
+		reviewVersion string
+		found         bool
+		wantChecks    int
+	}{
+		{name: "no review continues", packageID: "cloud.lazycat.no-review", wantChecks: 1},
+		{name: "pending review pauses", packageID: "cloud.lazycat.pending-review", reviewVersion: "1.4.0", found: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			cfg := gitConfig()
+			cfg.Update.Strategy = config.StrategyPublish
+			cfg.Update.VersionSource = config.VersionSource{Type: config.VersionSourceImage, Image: "web"}
+			cfg.Stores.Official.Enabled = true
+			checks := 0
+			deps := action.Dependencies{
+				Host:       platform.Host{OS: "linux", Arch: "amd64"},
+				ResultDir:  filepath.Join(root, "results"),
+				LoadConfig: func(string) (config.Config, error) { return cfg, nil },
+				Inspect: func(context.Context, config.Project) (project.Info, error) {
+					return project.Info{Root: root, PackageID: test.packageID, Version: "1.3.0"}, nil
+				},
+				SetVersion: func(string, string) (yamledit.Change, error) {
+					t.Fatal("unchanged image check must not edit package.yml")
+					return yamledit.Change{}, nil
+				},
+				Build: func(context.Context, actionbuild.Request) (actionbuild.Result, error) {
+					t.Fatal("waiting-review preflight must run before builds")
+					return actionbuild.Result{}, nil
+				},
+				WaitingReviewVersion: func(_ context.Context, packageID string) (string, bool, error) {
+					if packageID != test.packageID {
+						t.Fatalf("package=%q", packageID)
+					}
+					return test.reviewVersion, test.found, nil
+				},
+				CheckImages: func(context.Context, imageflow.Request) (imageflow.Result, error) {
+					checks++
+					return imageflow.Result{Version: "1.3.0", Channel: "stable"}, nil
+				},
+			}
+
+			result, err := action.Run(context.Background(), action.Input{
+				Operation: action.OperationAuto, EventName: "schedule", RefType: "branch", RefName: "main",
+			}, deps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if checks != test.wantChecks || result.OfficialReviewPending != test.found || result.OfficialReviewVersion != test.reviewVersion {
+				t.Fatalf("checks=%d result=%#v", checks, result)
+			}
+			if test.found && (result.Changed || result.Version != "1.3.0" || result.Tag != "v1.3.0" || result.Operation != "check") {
+				t.Fatalf("paused result=%#v", result)
+			}
+		})
+	}
+}
+
 func TestRunCheckUpdatesVersionBuildsAndReturnsImageResults(t *testing.T) {
 	root := t.TempDir()
 	packageFile := filepath.Join(root, "package.yml")
