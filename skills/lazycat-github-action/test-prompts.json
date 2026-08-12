@@ -6,8 +6,8 @@
   },
   {
     "id": "official-image-project",
-    "prompt": "为一个包含 db 和 web 两个 service 的 LazyCat Docker 项目生成定时更新配置。web 驱动应用版本并发布官方商店，db 不受 Action 管理。希望避免官方商店已存在相同版本时再次提交。",
-    "expected": "显式把 web 设为 version_source 和 service target；只配置 web image；使用 lazycat delivery；官方商店启用 skip_if_version_exists；保持 linux/amd64 目标，不错误管理 db。"
+    "prompt": "为一个包含 db 和 web 两个 service 的 LazyCat Docker 项目生成定时更新配置。web 驱动应用版本并发布官方商店，db 不受 Action 管理。希望避免官方商店已存在相同版本时再次提交；如果 0.10.55 正在审核但 web 已选出 0.10.56，则继续自动提交新版。",
+    "expected": "显式把 web 设为 version_source 和 service target；只配置 web image；使用 lazycat delivery；官方商店启用 skip_if_version_exists，并保留默认启用的 continue_if_newer_version: true。审核版本等于或高于同一次选出的候选时暂停，审核版本更旧时在 mirror/懒猫交付和文件写入前完成比较并用同一候选继续；官方上传前用最终校验 LPK 版本再次认证复查；Git 版本源和无效 SemVer 安全停止；保持 linux/amd64 目标，不错误管理 db。"
   },
   {
     "id": "private-secret-boundary-review",

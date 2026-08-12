@@ -209,6 +209,134 @@ func TestFlowBlocksVersionSourceDowngradeBeforeDelivery(t *testing.T) {
 	}
 }
 
+func TestFlowOfficialReviewGateUsesSelectedVersionSourceCandidate(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		reviewVersion string
+		wantPaused    bool
+	}{
+		{name: "equal review pauses", reviewVersion: "2.0.0", wantPaused: true},
+		{name: "newer review pauses", reviewVersion: "2.1.0", wantPaused: true},
+		{name: "older review continues", reviewVersion: "1.9.0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			deliverer := &fakeDeliverer{}
+			registryClient := &fakeRegistry{bySource: map[string][]versioning.Candidate{
+				"ghcr.io/acme/web": {{Tag: "v2.0.0", Digest: digest("w"), Created: created(2)}},
+			}}
+			cfg := imageConfig()
+			flow := imageflow.Flow{
+				Registry: registryClient, Deliverer: deliverer,
+				ReadManifest: func(string, []manifestedit.Target) ([]manifestedit.Current, error) {
+					return []manifestedit.Current{
+						{ID: "db", RuntimeRef: "docker.io/library/postgres:17.1.0", UpstreamRef: "docker.io/library/postgres:17.1.0"},
+						{ID: "web", RuntimeRef: "ghcr.io/acme/web:v1.0.0", UpstreamRef: "ghcr.io/acme/web:v1.0.0"},
+					}, nil
+				},
+				ApplyManifest: func(string, []manifestedit.Update) ([]manifestedit.Change, error) {
+					return []manifestedit.Change{{ID: "web", Changed: true}}, nil
+				},
+			}
+			result, err := flow.Check(t.Context(), imageflow.Request{
+				Config: cfg, Project: project.Info{ManifestFile: "manifest.yml", Version: "1.0.0"},
+				ImageID: "web", OfficialReviewVersion: test.reviewVersion,
+			})
+			if test.wantPaused {
+				if err == nil || !errors.Is(err, imageflow.ErrOfficialReviewCoversCandidate) || deliverer.calls != 0 {
+					t.Fatalf("err=%v deliveries=%d", err, deliverer.calls)
+				}
+				return
+			}
+			if err != nil || result.Version != "2.0.0" || deliverer.calls != 1 {
+				t.Fatalf("result=%#v err=%v deliveries=%d", result, err, deliverer.calls)
+			}
+		})
+	}
+}
+
+func TestFlowOfficialReviewGateRejectsNonSemVer(t *testing.T) {
+	for _, reviewVersion := range []string{"latest", "1.2"} {
+		t.Run(reviewVersion, func(t *testing.T) {
+			cfg := imageConfig()
+			cfg.Images = cfg.Images[1:]
+			flow := imageflow.Flow{
+				Registry: &fakeRegistry{bySource: map[string][]versioning.Candidate{
+					"ghcr.io/acme/web": {{Tag: "v2.0.0", Digest: digest("w"), Created: created(2)}},
+				}},
+				Deliverer: &fakeDeliverer{},
+				ReadManifest: func(string, []manifestedit.Target) ([]manifestedit.Current, error) {
+					return []manifestedit.Current{{ID: "web", RuntimeRef: "ghcr.io/acme/web:v1.0.0", UpstreamRef: "ghcr.io/acme/web:v1.0.0"}}, nil
+				},
+			}
+			_, err := flow.Check(t.Context(), imageflow.Request{
+				Config: cfg, Project: project.Info{ManifestFile: "manifest.yml", Version: "1.0.0"}, OfficialReviewVersion: reviewVersion,
+			})
+			if err == nil || errors.Is(err, imageflow.ErrOfficialReviewCoversCandidate) || !strings.Contains(err.Error(), "compare official review") {
+				t.Fatalf("err=%v", err)
+			}
+		})
+	}
+}
+
+func TestFlowOfficialReviewGatePlansMutablePatchFromPersistedDigest(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		reviewVersion string
+		sourceDigest  string
+		digestChanged bool
+		wantPaused    bool
+		wantVersion   string
+	}{
+		{name: "changed digest newer patch continues", reviewVersion: "1.4.6", sourceDigest: digest("b"), digestChanged: true, wantVersion: "1.4.7"},
+		{name: "equal digest current review pauses", reviewVersion: "1.4.6", sourceDigest: digest("a"), wantPaused: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := mutableImageConfig()
+			deliverer := &fakeDeliverer{digestChanged: test.digestChanged, currentDigest: digest("a")}
+			flow := imageflow.Flow{
+				Registry:  &fakeRegistry{bySource: map[string][]versioning.Candidate{"ghcr.io/acme/web": {{Tag: "latest", Digest: test.sourceDigest, Created: created(12)}}}},
+				Deliverer: deliverer,
+				ReadManifest: func(string, []manifestedit.Target) ([]manifestedit.Current, error) {
+					return []manifestedit.Current{{ID: "web", RuntimeRef: "registry.lazycat.cloud/web:current", UpstreamRef: "ghcr.io/acme/web:latest@" + digest("a")}}, nil
+				},
+				ApplyManifest: func(string, []manifestedit.Update) ([]manifestedit.Change, error) {
+					return []manifestedit.Change{{ID: "web", Changed: true}}, nil
+				},
+			}
+			result, err := flow.Check(t.Context(), imageflow.Request{
+				Config: cfg, Project: project.Info{ManifestFile: "manifest.yml", Version: "1.4.6"}, OfficialReviewVersion: test.reviewVersion,
+			})
+			if test.wantPaused {
+				if err == nil || !errors.Is(err, imageflow.ErrOfficialReviewCoversCandidate) || deliverer.calls != 0 {
+					t.Fatalf("err=%v deliveries=%d", err, deliverer.calls)
+				}
+				return
+			}
+			if err != nil || result.Version != test.wantVersion || deliverer.calls != 1 {
+				t.Fatalf("result=%#v err=%v deliveries=%d", result, err, deliverer.calls)
+			}
+		})
+	}
+}
+
+func TestFlowOfficialReviewGateRejectsMutableDigestPlanDrift(t *testing.T) {
+	cfg := mutableImageConfig()
+	deliverer := &fakeDeliverer{digestChanged: false, currentDigest: digest("a")}
+	flow := imageflow.Flow{
+		Registry:  &fakeRegistry{bySource: map[string][]versioning.Candidate{"ghcr.io/acme/web": {{Tag: "latest", Digest: digest("b"), Created: created(12)}}}},
+		Deliverer: deliverer,
+		ReadManifest: func(string, []manifestedit.Target) ([]manifestedit.Current, error) {
+			return []manifestedit.Current{{ID: "web", RuntimeRef: "registry.lazycat.cloud/web:current", UpstreamRef: "ghcr.io/acme/web:latest@" + digest("a")}}, nil
+		},
+	}
+	_, err := flow.Check(t.Context(), imageflow.Request{
+		Config: cfg, Project: project.Info{ManifestFile: "manifest.yml", Version: "1.4.6"}, OfficialReviewVersion: "1.4.6",
+	})
+	if err == nil || !strings.Contains(err.Error(), "digest plan changed") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestFlowAllowsExplicitVersionSourceDowngrade(t *testing.T) {
 	deliverer := &fakeDeliverer{}
 	cfg := imageConfig()
@@ -579,6 +707,36 @@ func TestFlowDoesNotMisclassifyRegistryAuthenticationFailureAsPlatformMissing(t 
 	_, err := flow.Check(context.Background(), imageflow.Request{Config: cfg, Project: project.Info{ManifestFile: "manifest.yml"}})
 	if err == nil || errors.Is(err, imageflow.ErrPlatformNotFound) || !strings.Contains(err.Error(), "unauthorized") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestFlowClassifiesOnlyActualMirrorVerificationFailures(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		deliveryErr error
+		wantMirror  bool
+	}{
+		{name: "verification", deliveryErr: fmt.Errorf("%w: timeout", delivery.ErrMirrorVerification), wantMirror: true},
+		{name: "configuration", deliveryErr: errors.New("mirror image template is required")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := imageConfig()
+			cfg.Images = cfg.Images[1:]
+			cfg.Images[0].Delivery = config.Delivery{Mode: "mirror", ImageTemplate: "mirror.example/acme/web:{tag}", RequireDigestMatch: true}
+			flow := imageflow.Flow{
+				Registry: &fakeRegistry{bySource: map[string][]versioning.Candidate{
+					"ghcr.io/acme/web": {{Tag: "v2.0.0", Digest: digest("a"), Created: created(1)}},
+				}},
+				Deliverer: &fakeDeliverer{err: test.deliveryErr},
+				ReadManifest: func(string, []manifestedit.Target) ([]manifestedit.Current, error) {
+					return []manifestedit.Current{{ID: "web", UpstreamRef: "ghcr.io/acme/web:v1.0.0", RuntimeRef: "mirror.example/acme/web:v1.0.0"}}, nil
+				},
+			}
+			_, err := flow.Check(t.Context(), imageflow.Request{Config: cfg, Project: project.Info{ManifestFile: "manifest.yml", Version: "1.0.0"}})
+			if err == nil || errors.Is(err, imageflow.ErrMirrorVerificationFailed) != test.wantMirror {
+				t.Fatalf("err=%v wantMirror=%t", err, test.wantMirror)
+			}
+		})
 	}
 }
 

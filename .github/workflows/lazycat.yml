@@ -178,8 +178,8 @@ jobs:
       image-results: ${{ steps.lazycat.outputs.image-results }}
       store-results: ${{ steps.store-results.outputs.store-results }}
       official-store-enabled: ${{ steps.lazycat.outputs.official-store-enabled }}
-      official-review-pending: ${{ steps.lazycat.outputs.official-review-pending }}
-      official-review-version: ${{ steps.lazycat.outputs.official-review-version }}
+      official-review-pending: ${{ steps.lazycat.outputs.official-review-pending == 'true' || steps.publish-official.outputs.official-review-pending == 'true' }}
+      official-review-version: ${{ steps.publish-official.outputs.official-review-version || steps.lazycat.outputs.official-review-version }}
       private-store-enabled: ${{ steps.lazycat.outputs.private-store-enabled }}
       update-strategy: ${{ steps.lazycat.outputs.update-strategy }}
       channel: ${{ steps.lazycat.outputs.channel }}
@@ -819,6 +819,7 @@ jobs:
           LZC_API_HOST: ${{ secrets.LZC_API_HOST }}
           LZC_API_TOKEN: ${{ secrets.LZC_API_TOKEN }}
           LAZYCAT_TOKEN: ${{ secrets.LAZYCAT_TOKEN }}
+          LAZYCAT_GUARD_OFFICIAL_REVIEW: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && inputs.operation == 'auto' }}
         with:
           operation: publish-official
           config: ${{ inputs.config }}

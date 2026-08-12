@@ -26,6 +26,7 @@ images:
 stores:
   official:
     enabled: false
+    continue_if_newer_version: true
     skip_if_version_exists: false
     retry:
       enabled: false

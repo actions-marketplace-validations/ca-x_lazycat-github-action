@@ -309,7 +309,7 @@ Action 会比较目标架构的上游 digest 与当前已交付镜像 digest。d
 
 mutable `direct` 和 `mirror` 引用会固定 digest，确保上次状态可追踪；mirror 必须设置 `require_digest_match: true`。官方商店仍强制使用 `delivery.mode: lazycat`。dry-run 会做同样的 digest 比较，但不会复制镜像或写文件。`image-results` 会输出 `currentDigest`、`sourceDigest`、`digestChanged`、`bump`、`previousVersion` 和 `selectedVersion` 供审计。
 
-LazyCat 交付会把选中的源 digest 持久化到 Manifest 的 `upstream` 注释。后续运行直接比较这个基线，不会匿名读取私有 LazyCat Registry。没有基线的旧 LazyCat 引用会做一次已认证复制，并比较返回的内容寻址引用；外部运行镜像会先迁移到 LazyCat Registry，但不误加版本。只有“旧私有引用且尚无只读基线”的首次 dry-run 会失败关闭，完成一次可信非 dry-run 迁移后即可正常只读检查。
+LazyCat 交付会把选中的源 digest 持久化到 Manifest 的 `upstream` 注释，并使用该 digest 固定的源引用执行远程复制。后续运行直接比较这个基线，不会匿名读取私有 LazyCat Registry。没有基线的旧 LazyCat 引用会做一次已认证、digest 固定的复制，并比较返回的内容寻址引用；外部运行镜像会先迁移到 LazyCat Registry，但不误加版本。只有“旧私有引用且尚无只读基线”的首次 dry-run 会失败关闭，完成一次可信非 dry-run 迁移后即可正常只读检查。
 
 Custom 示例：
 
@@ -354,6 +354,8 @@ delivery:
 ```
 
 省略 `image_template` 时，Docker Hub 默认使用 `docker.1ms.run`，GHCR 默认使用 `ghcr.1ms.run`。历史配置可以继续保留手写的 `image_template`；没有环境变量覆盖时不会改变。模板支持 `{tag}`、`{digest}` 和 `{source}`。启用 `require_digest_match` 后，Action 会检查 mirror 中与项目目标平台对应的镜像，只有 digest 与源镜像一致才会修改 Manifest。
+
+mirror 校验不会复制镜像：其失败使用 `MIRROR_VERIFICATION_FAILED`，`IMAGE_COPY_FAILED` 仅用于懒猫 Registry 镜像交付。
 
 Reusable workflow 会自动读取名为 `LAZYCAT_DOCKER_MIRROR`、`LAZYCAT_GHCR_MIRROR` 和 `LAZYCAT_REGISTRY_MIRRORS` 的 GitHub Repository/Organization Variables。未定义的 Variable 会解析为空字符串并安全 fallback。调用方也可以通过可选 workflow input 对单次调用进行覆盖：
 
@@ -470,7 +472,7 @@ update:
 
 直接发布会创建 Git commit、tag、GitHub Release 和 Release Asset。配置了商店时，reusable workflow 随后提交经过校验的 LPK。`strategy: pull` 永远不会发布商店。
 
-定时或手动触发的自动直发开始前，如果启用了官方商店，Action 会通过带认证的开发者 API 查询精确的审核中版本。存在审核任务时，本轮会在镜像检查或交付前暂停，输出 `official-review-pending: true` 与 `official-review-version`，且不会修改文件、commit、push、创建 tag/Release 或对任一商店执行补发；审核结束后的下一次自动运行会自然恢复。查询确认没有审核任务时立即继续。认证或远端查询失败会安全停止，绝不会误当成“没有审核”。显式 operation、dry-run、PR 更新以及 Tag/Release 发布保持原行为。
+定时或手动触发的自动直发开始前，如果启用了官方商店，Action 会通过带认证的开发者 API 查询精确的审核中版本。对于镜像版本源，`stores.official.continue_if_newer_version` 默认是 `true`：真实镜像检查会选择最新候选，并在 mirror 校验、懒猫镜像交付或文件修改之前完成比较。对于可变的 `bump: patch` 版本源，Action 根据 Manifest 中持久化的源 digest 规划候选应用版本：digest 未变时保留当前版本，变化时选择下一 patch。审核中版本等于或高于候选版本时暂停；候选版本更高时，后续自动升级和发布复用同一次选择继续执行。官方上传前，reusable workflow 还会用最终校验过的 LPK 版本再次执行认证比较，避免构建或创建 Release 期间新增的审核绕过门禁。将此选项设为 `false` 可恢复“只要存在审核就暂停”的保守行为。暂停结果会输出 `official-review-pending: true` 和 `official-review-version`；首次检查暂停时不会编辑、提交、推送、打 tag、创建 Release 或对账商店，最终复查暂停时则会阻止官方 LPK 上传和审核提交。Git 版本源没有可比较的上游镜像候选，因此存在审核时始终暂停。无效/非 SemVer 比较、认证错误和远程错误都会安全停止。显式 operation、dry-run、PR 更新及 Tag/Release 发布保持原行为。
 
 ## 商店发布
 
@@ -489,6 +491,7 @@ update:
 stores:
   official:
     enabled: true
+    continue_if_newer_version: true
     skip_if_version_exists: true
     create_if_missing: true
     changelog_locales: [zh, en]

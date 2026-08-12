@@ -45,12 +45,32 @@ update:
 				if !got.Build.ShouldRunBuildScript() {
 					t.Fatal("buildscript should default to enabled")
 				}
+				if !got.Stores.Official.ShouldContinueIfNewerVersion() {
+					t.Fatal("newer image versions should continue by default during official review")
+				}
 				if strings.Join(got.Stores.Official.Locales, ",") != "zh,en" {
 					t.Fatalf("official locales=%v", got.Stores.Official.Locales)
 				}
 				retry := got.Stores.Official.Retry
 				if retry.Enabled || retry.MaxAttempts != 3 || retry.InitialDelay != 2*time.Second || retry.MaxDelay != 30*time.Second {
 					t.Fatalf("official retry=%#v", retry)
+				}
+			},
+		},
+		{
+			name: "official review newer-version continuation can be disabled",
+			yaml: `version: 1
+project: {}
+update:
+  version_source:
+    type: git
+stores:
+  official:
+    continue_if_newer_version: false
+`,
+			check: func(t *testing.T, got config.Config) {
+				if got.Stores.Official.ShouldContinueIfNewerVersion() {
+					t.Fatal("newer-version continuation should be disabled")
 				}
 			},
 		},

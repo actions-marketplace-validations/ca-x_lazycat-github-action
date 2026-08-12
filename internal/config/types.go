@@ -96,12 +96,17 @@ type Stores struct {
 }
 
 type OfficialStore struct {
-	Enabled             bool                `yaml:"enabled"`
-	SkipIfVersionExists bool                `yaml:"skip_if_version_exists"`
-	CreateIfMissing     bool                `yaml:"create_if_missing"`
-	Locales             []string            `yaml:"changelog_locales"`
-	Application         OfficialApplication `yaml:"application"`
-	Retry               OfficialRetry       `yaml:"retry"`
+	Enabled                bool                `yaml:"enabled"`
+	SkipIfVersionExists    bool                `yaml:"skip_if_version_exists"`
+	ContinueIfNewerVersion *bool               `yaml:"continue_if_newer_version"`
+	CreateIfMissing        bool                `yaml:"create_if_missing"`
+	Locales                []string            `yaml:"changelog_locales"`
+	Application            OfficialApplication `yaml:"application"`
+	Retry                  OfficialRetry       `yaml:"retry"`
+}
+
+func (store OfficialStore) ShouldContinueIfNewerVersion() bool {
+	return store.ContinueIfNewerVersion == nil || *store.ContinueIfNewerVersion
 }
 
 type OfficialRetry struct {

@@ -50,6 +50,14 @@ func ReadInput(getenv func(string) string) (action.Input, error) {
 		}
 		input.DryRun = parsed
 	}
+	guardOfficialReview := strings.TrimSpace(getenv("LAZYCAT_GUARD_OFFICIAL_REVIEW"))
+	if guardOfficialReview != "" {
+		parsed, err := strconv.ParseBool(guardOfficialReview)
+		if err != nil {
+			return action.Input{}, fmt.Errorf("invalid LAZYCAT_GUARD_OFFICIAL_REVIEW value %q", guardOfficialReview)
+		}
+		input.GuardOfficialReview = parsed
+	}
 	epoch := strings.TrimSpace(getenv("SOURCE_DATE_EPOCH"))
 	if epoch != "" {
 		parsed, err := strconv.ParseInt(epoch, 10, 64)

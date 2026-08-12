@@ -105,6 +105,9 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 	if _, found := seen["official-retry-and-failure-isolation"]; !found {
 		t.Fatal("evals are missing official retry and failure-isolation coverage")
 	}
+	if _, found := seen["official-review-newer-candidate-continuation"]; !found {
+		t.Fatal("evals are missing official review newer-candidate continuation coverage")
+	}
 	if _, found := seen["updated-tag-and-target-architecture"]; !found {
 		t.Fatal("evals are missing updated-tag and target-architecture coverage")
 	}
@@ -134,6 +137,9 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 		text := string(data)
 		if !strings.Contains(text, "skip_if_version_exists") {
 			t.Fatalf("%s is missing skip_if_version_exists", name)
+		}
+		if !strings.Contains(text, "continue_if_newer_version") {
+			t.Fatalf("%s is missing continue_if_newer_version", name)
 		}
 	}
 	workflow, err := os.ReadFile(filepath.Join(root, "references", "workflows.md"))
@@ -304,6 +310,7 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 		"evolvable-version-selection":           {"tag_regex", "标签族", "2.x", "version_regex", "sort", "latest", "不得", "^2\\.2\\.0$"},
 		"major-line-version-selection":          {"v2", "^v?2\\.\\d+\\.\\d+$", "semver", "未来", "2.2.0"},
 		"tag-filter-version-mapping-separation": {"tag_regex", "version_regex", "(?P<version>", "version_template", "筛选", "映射"},
+		"official-image-project":                {"continue_if_newer_version: true", "等于或高于", "更旧", "同一候选", "最终校验 LPK", "再次认证复查", "Git 版本源", "SemVer"},
 	} {
 		expected, found := promptIDs[id]
 		if !found {
@@ -544,7 +551,8 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 	var starterDocument struct {
 		Stores struct {
 			Official struct {
-				Retry map[string]any `yaml:"retry"`
+				ContinueIfNewerVersion *bool          `yaml:"continue_if_newer_version"`
+				Retry                  map[string]any `yaml:"retry"`
 			} `yaml:"official"`
 		} `yaml:"stores"`
 	}
@@ -553,6 +561,9 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 	}
 	if len(starterDocument.Stores.Official.Retry) != 1 || starterDocument.Stores.Official.Retry["enabled"] != false {
 		t.Fatalf("starter official retry=%#v, want only enabled: false", starterDocument.Stores.Official.Retry)
+	}
+	if starterDocument.Stores.Official.ContinueIfNewerVersion == nil || !*starterDocument.Stores.Official.ContinueIfNewerVersion {
+		t.Fatalf("starter official continue_if_newer_version=%v, want true", starterDocument.Stores.Official.ContinueIfNewerVersion)
 	}
 }
 

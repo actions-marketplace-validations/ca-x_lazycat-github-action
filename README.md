@@ -309,7 +309,7 @@ The Action compares the selected target-platform digest with the currently deliv
 
 Mutable `direct` and `mirror` references are digest-pinned so the previous state is durable. Mutable mirrors require `require_digest_match: true`. Official-store workflows must continue to use `delivery.mode: lazycat`. Dry-run performs the same digest comparison without copying or writing. `image-results` reports `currentDigest`, `sourceDigest`, `digestChanged`, `bump`, `previousVersion`, and `selectedVersion` for auditability.
 
-For LazyCat delivery, the selected source digest is persisted in the Manifest's `upstream` comment. Subsequent runs compare that baseline without anonymously reading the private LazyCat Registry. A legacy LazyCat reference without a baseline performs one authenticated copy and compares the returned content-addressed reference; an external runtime performs one Registry migration copy without a version bump. A dry-run fails closed only for the legacy private-reference case where no read-only baseline exists yet.
+For LazyCat delivery, the selected source digest is persisted in the Manifest's `upstream` comment and the remote copy uses that digest-pinned source reference. Subsequent runs compare the baseline without anonymously reading the private LazyCat Registry. A legacy LazyCat reference without a baseline performs one authenticated digest-pinned copy and compares the returned content-addressed reference; an external runtime performs one Registry migration copy without a version bump. A dry-run fails closed only for the legacy private-reference case where no read-only baseline exists yet.
 
 Custom example:
 
@@ -354,6 +354,8 @@ delivery:
 ```
 
 When `image_template` is omitted, Docker Hub uses `docker.1ms.run` and GHCR uses `ghcr.1ms.run`. Existing configurations may keep a hand-written `image_template`; without an environment override it remains unchanged. Templates support `{tag}`, `{digest}`, and `{source}`. With `require_digest_match: true`, the Action inspects the mirror image for the configured target platform and requires its digest to match the source digest before editing the Manifest.
+
+Mirror verification never copies an image: failures use `MIRROR_VERIFICATION_FAILED`, while `IMAGE_COPY_FAILED` is reserved for LazyCat Registry delivery.
 
 The reusable workflow automatically reads GitHub Repository/Organization Variables named `LAZYCAT_DOCKER_MIRROR`, `LAZYCAT_GHCR_MIRROR`, and `LAZYCAT_REGISTRY_MIRRORS`. Undefined Variables resolve to an empty string and safely fall back. Optional workflow inputs can override those Variables for one caller:
 
@@ -474,7 +476,7 @@ A successful scheduled or manual image check commits only the managed package an
 
 Direct publish creates the Git commit, tag, GitHub Release, and Release Asset. If a store is enabled, the reusable workflow then submits the verified LPK to that store. Store publishing never runs for `strategy: pull`.
 
-Before an automatic scheduled or manually dispatched direct publish, an enabled official store is queried through the authenticated developer API for an exact version awaiting review. If a review is pending, the run stops before image inspection or delivery and reports `official-review-pending: true` plus `official-review-version`; it does not edit, commit, push, tag, create a Release, or reconcile either store. The next automatic run resumes normally after the review clears. A missing review continues immediately. Authentication and remote failures fail closed instead of being treated as “no review.” Explicit operations, dry runs, pull-request updates, and Tag/Release publication keep their existing behavior.
+Before an automatic scheduled or manually dispatched direct publish, an enabled official store is queried through the authenticated developer API for an exact version awaiting review. For an image version source, `stores.official.continue_if_newer_version` defaults to `true`: the real image check selects the latest candidate and compares it before mirror verification, LazyCat delivery, or file edits. For mutable `bump: patch` sources, the candidate application version is planned from the persisted source digest: an unchanged digest keeps the current version and a changed digest selects the next patch. The run pauses when the waiting-review version is equal to or newer than that candidate; if the candidate is newer, the same selection continues through automatic update and publication. Immediately before official upload, the reusable workflow repeats the authenticated comparison against the final verified LPK version so a review created during build/Release work cannot bypass the gate. Set the option to `false` to restore the conservative behavior of pausing for every pending review. A pause reports `official-review-pending: true` plus `official-review-version`; the initial pause does not edit, commit, push, tag, create a Release, or reconcile either store, while a final recheck pause prevents official upload/review submission. Git version sources pause for any pending review because there is no upstream image candidate to compare. Invalid/non-SemVer comparisons, authentication errors, and remote failures fail closed. Explicit operations, dry runs, pull-request updates, and Tag/Release publication keep their existing behavior.
 
 ## Store publishing
 
@@ -493,6 +495,7 @@ update:
 stores:
   official:
     enabled: true
+    continue_if_newer_version: true
     skip_if_version_exists: true
     create_if_missing: true
     changelog_locales: [zh, en]

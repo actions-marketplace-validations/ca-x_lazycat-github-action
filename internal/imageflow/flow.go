@@ -22,10 +22,12 @@ import (
 )
 
 var (
-	ErrVersionNotFound  = errors.New("image version not found")
-	ErrVersionDowngrade = errors.New("image version downgrade blocked")
-	ErrPlatformNotFound = errors.New("image platform not found")
-	ErrDeliveryFailed   = errors.New("image delivery failed")
+	ErrVersionNotFound               = errors.New("image version not found")
+	ErrVersionDowngrade              = errors.New("image version downgrade blocked")
+	ErrPlatformNotFound              = errors.New("image platform not found")
+	ErrDeliveryFailed                = errors.New("image delivery failed")
+	ErrMirrorVerificationFailed      = errors.New("mirror verification failed")
+	ErrOfficialReviewCoversCandidate = errors.New("official review covers selected candidate")
 )
 
 type Registry interface {
@@ -37,11 +39,12 @@ type Deliverer interface {
 }
 
 type Request struct {
-	Config     config.Config
-	Project    project.Info
-	ImageID    string
-	DryRun     bool
-	OnProgress func(string, appstore.CopyProgress)
+	Config                config.Config
+	Project               project.Info
+	ImageID               string
+	DryRun                bool
+	OfficialReviewVersion string
+	OnProgress            func(string, appstore.CopyProgress)
 }
 
 type LayerProgress struct {
@@ -102,6 +105,9 @@ func (flow Flow) Check(ctx context.Context, request Request) (Result, error) {
 	selected, err := selectImages(request.Config.Images, request.ImageID)
 	if err != nil {
 		return Result{}, err
+	}
+	if request.OfficialReviewVersion != "" {
+		selected = prioritizeImage(selected, request.Config.Update.VersionSource.Image)
 	}
 	logger := flow.Logger
 	if logger == nil {
@@ -171,12 +177,43 @@ func (flow Flow) Check(ctx context.Context, request Request) (Result, error) {
 			return Result{}, fmt.Errorf("%w for %q: %v", ErrVersionNotFound, image.ID, err)
 		}
 		logger.Info("Docker image version selected", "image_id", image.ID, "tag", selection.Candidate.Tag, "version", selection.Version, "digest", selection.Candidate.Digest, "platform", target.Platform())
+		current := currentByID[image.ID]
+		sourceRef := image.Source + ":" + selection.Candidate.Tag
+		currentDigest := ""
 		bumpedVersion := ""
+		plannedVersion := selection.Version
+		plannedDigestChanged := false
 		if mutable {
 			bumpedVersion, err = versioning.BumpPatch(request.Project.Version)
 			if err != nil {
 				return Result{}, fmt.Errorf("validate mutable image version for %q: %w", image.ID, err)
 			}
+			currentDigest = referenceDigest(current.UpstreamRef)
+			if request.OfficialReviewVersion != "" {
+				switch {
+				case currentDigest != "":
+					plannedDigestChanged = !strings.EqualFold(strings.TrimSpace(currentDigest), strings.TrimSpace(selection.Candidate.Digest))
+					plannedVersion = request.Project.Version
+					if plannedDigestChanged {
+						plannedVersion = bumpedVersion
+					}
+				case image.Delivery.Mode == "lazycat" && !strings.HasPrefix(strings.TrimSpace(current.RuntimeRef), "registry.lazycat.cloud/"):
+					plannedVersion = request.Project.Version
+				default:
+					return Result{}, fmt.Errorf("compare official review for mutable image %q: trusted source digest baseline is missing", image.ID)
+				}
+			}
+		}
+		if request.OfficialReviewVersion != "" && image.ID == request.Config.Update.VersionSource.Image {
+			reviewVersion, reviewErr := semver.StrictNewVersion(strings.TrimSpace(request.OfficialReviewVersion))
+			candidateVersion, candidateErr := semver.StrictNewVersion(strings.TrimSpace(plannedVersion))
+			if reviewErr != nil || candidateErr != nil {
+				return Result{}, fmt.Errorf("compare official review version %q with selected candidate version %q: %w", request.OfficialReviewVersion, plannedVersion, errors.Join(reviewErr, candidateErr))
+			}
+			if !reviewVersion.LessThan(candidateVersion) {
+				return Result{}, fmt.Errorf("%w: review %s is not older than candidate %s", ErrOfficialReviewCoversCandidate, reviewVersion, candidateVersion)
+			}
+			logger.Info("selected image version is newer than official review; automatic publication continues", "image_id", image.ID, "review_version", reviewVersion, "candidate_version", candidateVersion)
 		}
 		if !mutable && request.Config.Update.VersionSource.Type == config.VersionSourceImage && request.Config.Update.VersionSource.Image == image.ID && !request.Config.Update.AllowDowngrade {
 			currentVersion, currentErr := semver.StrictNewVersion(strings.TrimSpace(request.Project.Version))
@@ -188,15 +225,10 @@ func (flow Flow) Check(ctx context.Context, request Request) (Result, error) {
 				return Result{}, fmt.Errorf("%w for %q: selected %s is lower than current %s", ErrVersionDowngrade, image.ID, selection.Version, request.Project.Version)
 			}
 		}
-		sourceRef := image.Source + ":" + selection.Candidate.Tag
-		current := currentByID[image.ID]
-		currentDigest := ""
-		if mutable {
-			currentDigest = referenceDigest(current.UpstreamRef)
-		}
 		deliveryRequest := delivery.Request{
 			Image: image, Tag: selection.Candidate.Tag, SourceRef: sourceRef, SourceDigest: selection.Candidate.Digest,
-			CurrentRef: current.RuntimeRef, CurrentDigest: currentDigest, Mutable: mutable, Target: target, DryRun: request.DryRun,
+			CurrentRef: current.RuntimeRef, CurrentDigest: currentDigest,
+			Mutable: mutable, Target: target, DryRun: request.DryRun,
 		}
 		if request.OnProgress != nil {
 			deliveryRequest.OnProgress = func(progress appstore.CopyProgress) { request.OnProgress(image.ID, progress) }
@@ -221,14 +253,17 @@ func (flow Flow) Check(ctx context.Context, request Request) (Result, error) {
 				logger.Info("Docker image copy stream completed", "image_id", image.ID)
 			}
 		}
-		logger.Info("Docker image delivery started", "image_id", image.ID, "mode", image.Delivery.Mode, "source", sourceRef)
+		logDeliveryStarted(logger, image, sourceRef)
 
 		needsUpdate := false
 		var delivered delivery.Result
 		if mutable {
 			delivered, err = flow.Deliverer.Deliver(ctx, deliveryRequest)
 			if err != nil {
-				return Result{}, fmt.Errorf("%w for %q: %w", ErrDeliveryFailed, image.ID, err)
+				return Result{}, wrapDeliveryError(image, err)
+			}
+			if request.OfficialReviewVersion != "" && delivered.DigestChanged != plannedDigestChanged {
+				return Result{}, fmt.Errorf("mutable image %q digest plan changed during official review gate", image.ID)
 			}
 			needsUpdate = delivered.DigestChanged || delivered.DeliveryChanged
 		} else {
@@ -236,7 +271,7 @@ func (flow Flow) Check(ctx context.Context, request Request) (Result, error) {
 			case "direct", "mirror":
 				delivered, err = flow.Deliverer.Deliver(ctx, deliveryRequest)
 				if err != nil {
-					return Result{}, fmt.Errorf("%w for %q: %w", ErrDeliveryFailed, image.ID, err)
+					return Result{}, wrapDeliveryError(image, err)
 				}
 				needsUpdate = current.UpstreamRef != sourceRef || current.RuntimeRef != delivered.RuntimeRef
 			case "lazycat":
@@ -244,7 +279,7 @@ func (flow Flow) Check(ctx context.Context, request Request) (Result, error) {
 				if shouldDeliver {
 					delivered, err = flow.Deliverer.Deliver(ctx, deliveryRequest)
 					if err != nil {
-						return Result{}, fmt.Errorf("%w for %q: %w", ErrDeliveryFailed, image.ID, err)
+						return Result{}, wrapDeliveryError(image, err)
 					}
 				} else {
 					delivered = delivery.Result{Mode: "lazycat", RuntimeRef: current.RuntimeRef}
@@ -261,7 +296,7 @@ func (flow Flow) Check(ctx context.Context, request Request) (Result, error) {
 		if delivered.RuntimeRef == "" {
 			delivered.RuntimeRef = current.RuntimeRef
 		}
-		logger.Info("Docker image delivery completed", "image_id", image.ID, "mode", image.Delivery.Mode, "copied", delivered.Copied, "runtime_ref", delivered.RuntimeRef)
+		logDeliveryCompleted(logger, image, delivered)
 		if needsUpdate && !request.DryRun && delivered.RuntimeRef == "" {
 			return Result{}, fmt.Errorf("%w for %q: delivery returned an empty runtime reference", ErrDeliveryFailed, image.ID)
 		}
@@ -312,6 +347,48 @@ func (flow Flow) Check(ctx context.Context, request Request) (Result, error) {
 	}
 	logger.Info("Docker image update completed", "changed", result.Changed, "version", result.Version, "images", len(result.Images))
 	return result, nil
+}
+
+func prioritizeImage(images []config.Image, id string) []config.Image {
+	for index := range images {
+		if images[index].ID == id {
+			if index == 0 {
+				return images
+			}
+			prioritized := make([]config.Image, 0, len(images))
+			prioritized = append(prioritized, images[index])
+			prioritized = append(prioritized, images[:index]...)
+			prioritized = append(prioritized, images[index+1:]...)
+			return prioritized
+		}
+	}
+	return images
+}
+
+func wrapDeliveryError(image config.Image, err error) error {
+	if errors.Is(err, delivery.ErrMirrorVerification) {
+		return fmt.Errorf("%w for %q: %w", ErrMirrorVerificationFailed, image.ID, err)
+	}
+	if image.Delivery.Mode == "mirror" {
+		return fmt.Errorf("prepare mirror image %q: %w", image.ID, err)
+	}
+	return fmt.Errorf("%w for %q: %w", ErrDeliveryFailed, image.ID, err)
+}
+
+func logDeliveryStarted(logger *slog.Logger, image config.Image, sourceRef string) {
+	if image.Delivery.Mode == "mirror" {
+		logger.Info("Docker mirror verification started", "image_id", image.ID, "source", sourceRef)
+		return
+	}
+	logger.Info("Docker image delivery started", "image_id", image.ID, "mode", image.Delivery.Mode, "source", sourceRef)
+}
+
+func logDeliveryCompleted(logger *slog.Logger, image config.Image, delivered delivery.Result) {
+	if image.Delivery.Mode == "mirror" {
+		logger.Info("Docker mirror verification completed", "image_id", image.ID, "runtime_ref", delivered.RuntimeRef)
+		return
+	}
+	logger.Info("Docker image delivery completed", "image_id", image.ID, "mode", image.Delivery.Mode, "copied", delivered.Copied, "runtime_ref", delivered.RuntimeRef)
 }
 
 func referenceDigest(reference string) string {

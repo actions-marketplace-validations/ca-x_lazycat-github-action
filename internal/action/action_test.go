@@ -13,6 +13,7 @@ import (
 	"github.com/ca-x/lazycat-github-action/internal/action"
 	actionbuild "github.com/ca-x/lazycat-github-action/internal/build"
 	"github.com/ca-x/lazycat-github-action/internal/config"
+	"github.com/ca-x/lazycat-github-action/internal/delivery"
 	"github.com/ca-x/lazycat-github-action/internal/imageflow"
 	"github.com/ca-x/lazycat-github-action/internal/lpkcheck"
 	"github.com/ca-x/lazycat-github-action/internal/platform"
@@ -175,6 +176,35 @@ func TestRunPublishesOfficialStoreAndReturnsStableJSON(t *testing.T) {
 	}
 	if result.Operation != "publish-official" || result.SHA256 != strings.Repeat("a", 64) || !result.OfficialStoreEnabled || string(result.StoreResults) == "{}" || !strings.Contains(string(result.StoreResults), `"skipped":true`) || !strings.Contains(string(result.StoreResults), `"onlineVersion":"1.2.3"`) {
 		t.Fatalf("result=%#v", result)
+	}
+}
+
+func TestRunGuardedOfficialPublishReturnsPausedResultAfterFinalReviewRecheck(t *testing.T) {
+	root := t.TempDir()
+	cfg := gitConfig()
+	cfg.Update.Strategy = config.StrategyPublish
+	cfg.Stores.Official.Enabled = true
+	deps := action.Dependencies{
+		Host:       platform.Host{OS: "linux", Arch: "amd64"},
+		ResultDir:  filepath.Join(root, "results"),
+		LoadConfig: func(string) (config.Config, error) { return cfg, nil },
+		Inspect: func(context.Context, config.Project) (project.Info, error) {
+			return project.Info{Root: root, PackageID: "cloud.lazycat.example", Version: "1.2.3"}, nil
+		},
+		SetVersion: func(string, string) (yamledit.Change, error) { return yamledit.Change{}, nil },
+		Build: func(context.Context, actionbuild.Request) (actionbuild.Result, error) {
+			return actionbuild.Result{}, nil
+		},
+		Publish: func(context.Context, publishflow.Request) (publishflow.Result, error) {
+			return publishflow.Result{}, fmt.Errorf("publish official store: %w", &official.PendingReviewError{Version: "1.2.3"})
+		},
+	}
+	result, err := action.Run(t.Context(), action.Input{
+		Operation: action.OperationPublishOfficial, Version: "1.2.3", LPKPath: filepath.Join(root, "app.lpk"),
+		Changelog: "Release notes", GuardOfficialReview: true,
+	}, deps)
+	if err != nil || !result.OfficialReviewPending || result.OfficialReviewVersion != "1.2.3" || result.Version != "1.2.3" || result.Operation != "publish-official" {
+		t.Fatalf("result=%#v err=%v", result, err)
 	}
 }
 
@@ -667,11 +697,14 @@ func TestRunAutoPublishPausesBeforeImageWorkWhileOfficialReviewIsPending(t *test
 		name          string
 		packageID     string
 		reviewVersion string
+		latestVersion string
 		found         bool
 		wantChecks    int
+		wantPaused    bool
 	}{
-		{name: "no review continues", packageID: "cloud.lazycat.no-review", wantChecks: 1},
-		{name: "pending review pauses", packageID: "cloud.lazycat.pending-review", reviewVersion: "1.4.0", found: true},
+		{name: "no review continues", packageID: "cloud.lazycat.no-review", latestVersion: "1.3.0", wantChecks: 1},
+		{name: "pending review at latest pauses", packageID: "cloud.lazycat.pending-review", reviewVersion: "1.4.0", latestVersion: "1.4.0", found: true, wantChecks: 1, wantPaused: true},
+		{name: "older pending review continues", packageID: "cloud.lazycat.older-review", reviewVersion: "1.2.0", latestVersion: "1.3.0", found: true, wantChecks: 1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -702,9 +735,12 @@ func TestRunAutoPublishPausesBeforeImageWorkWhileOfficialReviewIsPending(t *test
 					}
 					return test.reviewVersion, test.found, nil
 				},
-				CheckImages: func(context.Context, imageflow.Request) (imageflow.Result, error) {
+				CheckImages: func(_ context.Context, request imageflow.Request) (imageflow.Result, error) {
 					checks++
-					return imageflow.Result{Version: "1.3.0", Channel: "stable"}, nil
+					if request.OfficialReviewVersion != "" && test.wantPaused {
+						return imageflow.Result{}, fmt.Errorf("%w: review %s covers candidate %s", imageflow.ErrOfficialReviewCoversCandidate, request.OfficialReviewVersion, test.latestVersion)
+					}
+					return imageflow.Result{Version: test.latestVersion, Channel: "stable"}, nil
 				},
 			}
 
@@ -714,13 +750,123 @@ func TestRunAutoPublishPausesBeforeImageWorkWhileOfficialReviewIsPending(t *test
 			if err != nil {
 				t.Fatal(err)
 			}
-			if checks != test.wantChecks || result.OfficialReviewPending != test.found || result.OfficialReviewVersion != test.reviewVersion {
+			if checks != test.wantChecks || result.OfficialReviewPending != test.wantPaused {
 				t.Fatalf("checks=%d result=%#v", checks, result)
 			}
-			if test.found && (result.Changed || result.Version != "1.3.0" || result.Tag != "v1.3.0" || result.Operation != "check") {
+			if test.wantPaused && (result.OfficialReviewVersion != test.reviewVersion || result.Changed || result.Version != "1.3.0" || result.Tag != "v1.3.0" || result.Operation != "check") {
 				t.Fatalf("paused result=%#v", result)
 			}
 		})
+	}
+}
+
+func TestRunAutoPublishFailsClosedWhenReviewOrCandidateVersionIsNotSemVer(t *testing.T) {
+	for _, test := range []struct {
+		name             string
+		reviewVersion    string
+		candidateVersion string
+	}{
+		{name: "review", reviewVersion: "latest", candidateVersion: "1.4.0"},
+		{name: "candidate", reviewVersion: "1.4.0", candidateVersion: "latest"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			cfg := gitConfig()
+			cfg.Update.Strategy = config.StrategyPublish
+			cfg.Update.VersionSource = config.VersionSource{Type: config.VersionSourceImage, Image: "web"}
+			cfg.Stores.Official.Enabled = true
+			deps := action.Dependencies{
+				Host:       platform.Host{OS: "linux", Arch: "amd64"},
+				ResultDir:  filepath.Join(root, "results"),
+				LoadConfig: func(string) (config.Config, error) { return cfg, nil },
+				Inspect: func(context.Context, config.Project) (project.Info, error) {
+					return project.Info{Root: root, PackageID: "cloud.lazycat.invalid-version", Version: "1.3.0"}, nil
+				},
+				SetVersion: func(string, string) (yamledit.Change, error) { return yamledit.Change{}, nil },
+				Build: func(context.Context, actionbuild.Request) (actionbuild.Result, error) {
+					return actionbuild.Result{}, nil
+				},
+				WaitingReviewVersion: func(context.Context, string) (string, bool, error) {
+					return test.reviewVersion, true, nil
+				},
+				CheckImages: func(_ context.Context, request imageflow.Request) (imageflow.Result, error) {
+					return imageflow.Result{}, fmt.Errorf("compare official review version %q with selected candidate version %q: invalid SemVer", request.OfficialReviewVersion, test.candidateVersion)
+				},
+			}
+			_, err := action.Run(t.Context(), action.Input{Operation: action.OperationAuto, EventName: "schedule"}, deps)
+			if err == nil || !strings.Contains(err.Error(), "CONFIG_INVALID") {
+				t.Fatalf("err=%v", err)
+			}
+		})
+	}
+}
+
+func TestRunAutoPublishFailsClosedWhenPendingReviewVersionIsEmpty(t *testing.T) {
+	root := t.TempDir()
+	cfg := gitConfig()
+	cfg.Update.Strategy = config.StrategyPublish
+	cfg.Update.VersionSource = config.VersionSource{Type: config.VersionSourceImage, Image: "web"}
+	cfg.Stores.Official.Enabled = true
+	cfg.Images = []config.Image{{
+		ID: "web", Target: "service", Service: "web", Source: "ghcr.io/acme/web", Channel: "stable", Sort: "semver",
+		Delivery: config.Delivery{Mode: "lazycat"},
+	}}
+	checkCalls := 0
+	deps := action.Dependencies{
+		Host:       platform.Host{OS: "linux", Arch: "amd64"},
+		ResultDir:  filepath.Join(root, "results"),
+		LoadConfig: func(string) (config.Config, error) { return cfg, nil },
+		Inspect: func(context.Context, config.Project) (project.Info, error) {
+			return project.Info{Root: root, PackageID: "cloud.lazycat.empty-review", Version: "1.3.0"}, nil
+		},
+		SetVersion: func(string, string) (yamledit.Change, error) { return yamledit.Change{}, nil },
+		Build: func(context.Context, actionbuild.Request) (actionbuild.Result, error) {
+			return actionbuild.Result{}, nil
+		},
+		WaitingReviewVersion: func(context.Context, string) (string, bool, error) { return "", true, nil },
+		CheckImages: func(context.Context, imageflow.Request) (imageflow.Result, error) {
+			checkCalls++
+			return imageflow.Result{Version: "1.4.0"}, nil
+		},
+	}
+	_, err := action.Run(t.Context(), action.Input{Operation: action.OperationAuto, EventName: "schedule"}, deps)
+	if err == nil || !strings.Contains(err.Error(), "CONFIG_INVALID") || checkCalls != 0 {
+		t.Fatalf("err=%v checkCalls=%d", err, checkCalls)
+	}
+}
+
+func TestRunAutoPublishCanDisableNewerCandidateContinuation(t *testing.T) {
+	root := t.TempDir()
+	disabled := false
+	cfg := gitConfig()
+	cfg.Update.Strategy = config.StrategyPublish
+	cfg.Update.VersionSource = config.VersionSource{Type: config.VersionSourceImage, Image: "web"}
+	cfg.Stores.Official.Enabled = true
+	cfg.Stores.Official.ContinueIfNewerVersion = &disabled
+	checkCalls := 0
+	deps := action.Dependencies{
+		Host:       platform.Host{OS: "linux", Arch: "amd64"},
+		ResultDir:  filepath.Join(root, "results"),
+		LoadConfig: func(string) (config.Config, error) { return cfg, nil },
+		Inspect: func(context.Context, config.Project) (project.Info, error) {
+			return project.Info{Root: root, PackageID: "cloud.lazycat.disabled-continuation", Version: "1.3.0"}, nil
+		},
+		SetVersion: func(string, string) (yamledit.Change, error) { return yamledit.Change{}, nil },
+		Build: func(context.Context, actionbuild.Request) (actionbuild.Result, error) {
+			return actionbuild.Result{}, nil
+		},
+		WaitingReviewVersion: func(context.Context, string) (string, bool, error) { return "1.2.0", true, nil },
+		CheckImages: func(context.Context, imageflow.Request) (imageflow.Result, error) {
+			checkCalls++
+			return imageflow.Result{Version: "1.4.0"}, nil
+		},
+	}
+	result, err := action.Run(t.Context(), action.Input{Operation: action.OperationAuto, EventName: "schedule"}, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.OfficialReviewPending || result.OfficialReviewVersion != "1.2.0" || checkCalls != 0 {
+		t.Fatalf("result=%#v checkCalls=%d", result, checkCalls)
 	}
 }
 
@@ -899,6 +1045,37 @@ func TestRunPreservesStructuredImageDeliveryError(t *testing.T) {
 		if !strings.Contains(message, expected) {
 			t.Fatalf("message=%q missing %q", message, expected)
 		}
+	}
+}
+
+func TestRunClassifiesMirrorVerificationFailureWithoutCallingItACopy(t *testing.T) {
+	cfg := gitConfig()
+	cfg.Update.VersionSource = config.VersionSource{Type: config.VersionSourceImage, Image: "web"}
+	cfg.Images = []config.Image{{
+		ID: "web", Target: "service", Service: "web", Source: "docker.io/acme/web", Channel: "stable", Sort: "semver",
+		Delivery: config.Delivery{Mode: "mirror", ImageTemplate: "docker.1ms.run/acme/web:{tag}", RequireDigestMatch: true},
+	}}
+	deps := action.Dependencies{
+		Host:       platform.Host{OS: "linux", Arch: "amd64"},
+		LoadConfig: func(string) (config.Config, error) { return cfg, nil },
+		Inspect: func(context.Context, config.Project) (project.Info, error) {
+			return project.Info{PackageID: "cloud.lazycat.example", Version: "1.0.0"}, nil
+		},
+		SetVersion: func(string, string) (yamledit.Change, error) { return yamledit.Change{}, nil },
+		Build: func(context.Context, actionbuild.Request) (actionbuild.Result, error) {
+			return actionbuild.Result{}, nil
+		},
+		CheckImages: func(context.Context, imageflow.Request) (imageflow.Result, error) {
+			return imageflow.Result{}, fmt.Errorf("%w: %w: registry timeout", imageflow.ErrMirrorVerificationFailed, delivery.ErrMirrorVerification)
+		},
+	}
+	_, err := action.Run(context.Background(), action.Input{Operation: action.OperationCheck}, deps)
+	if err == nil {
+		t.Fatal("expected mirror verification failure")
+	}
+	message := err.Error()
+	if !strings.Contains(message, "MIRROR_VERIFICATION_FAILED") || strings.Contains(message, "COPY") || strings.Contains(strings.ToLower(message), "delivery") {
+		t.Fatalf("message=%q", message)
 	}
 }
 

@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/ca-x/lazycat-github-action/internal/config"
 	"github.com/ca-x/lazycat-github-action/internal/httpx"
 	"github.com/cloudflare/backoff"
@@ -31,26 +32,36 @@ import (
 
 var sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+type PendingReviewError struct {
+	Version string
+}
+
+func (err *PendingReviewError) Error() string {
+	return fmt.Sprintf("official review for version %s already covers this publication", err.Version)
+}
+
 const (
 	maxResponseBytes                = 4 << 20
 	maxOfficialResponseMessageBytes = 512
 )
 
 type Request struct {
-	Provider        auth.TokenProvider
-	ProjectRoot     string
-	LPKPath         string
-	FileName        string
-	PackageID       string
-	Version         string
-	SHA256          string
-	Changelog       string
-	Locales         []string
-	CreateIfMissing bool
-	Application     config.OfficialApplication
-	DefaultName     string
-	Retry           config.OfficialRetry
-	Logger          *slog.Logger
+	Provider               auth.TokenProvider
+	ProjectRoot            string
+	LPKPath                string
+	FileName               string
+	PackageID              string
+	Version                string
+	SHA256                 string
+	Changelog              string
+	Locales                []string
+	CreateIfMissing        bool
+	Application            config.OfficialApplication
+	DefaultName            string
+	Retry                  config.OfficialRetry
+	Logger                 *slog.Logger
+	GuardPendingReview     bool
+	ContinueIfNewerVersion bool
 }
 
 type Result struct {
@@ -323,6 +334,11 @@ func publishAttempt(
 		}
 		created = true
 	}
+	if request.GuardPendingReview {
+		if err := checkPendingReview(ctx, client, packageID, version, request.ContinueIfNewerVersion); err != nil {
+			return Result{Created: created}, err
+		}
+	}
 	upload, err := uploadLPK(ctx, httpClient, baseURL, token, request.LPKPath, filename)
 	if err != nil {
 		return Result{Created: created}, err
@@ -344,6 +360,25 @@ func publishAttempt(
 		Published: true, Created: created, PackageID: uploadPackage, Version: uploadVersion,
 		UploadURL: strings.TrimSpace(upload.URL), SHA256: uploadDigest,
 	}, nil
+}
+
+func checkPendingReview(ctx context.Context, client *appstore.Client, packageID, candidateVersion string, continueIfNewer bool) error {
+	waitingVersion, found, err := client.WaitingReviewVersion(ctx, packageID)
+	if err != nil {
+		return sanitizePublishError(err)
+	}
+	if !found {
+		return nil
+	}
+	waiting, waitingErr := semver.StrictNewVersion(strings.TrimSpace(waitingVersion))
+	candidate, candidateErr := semver.StrictNewVersion(strings.TrimSpace(candidateVersion))
+	if waitingErr != nil || candidateErr != nil {
+		return publishError(lpkgo.CodeInvalidArgument, fmt.Errorf("compare final official review version %q with publication version %q: %w", waitingVersion, candidateVersion, errors.Join(waitingErr, candidateErr)))
+	}
+	if !continueIfNewer || !waiting.LessThan(candidate) {
+		return &PendingReviewError{Version: waiting.String()}
+	}
+	return nil
 }
 
 func prepareApplicationInfos(

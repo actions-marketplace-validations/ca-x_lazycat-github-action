@@ -22,6 +22,7 @@ func TestReadInputNormalizesTagVersionAndActionFields(t *testing.T) {
 		"INPUT_DOWNLOAD_URL":              "https://github.com/acme/app/releases/download/v1.2.3/app.lpk",
 		"INPUT_SHA256":                    strings.Repeat("a", 64),
 		"INPUT_DRY_RUN":                   "true",
+		"LAZYCAT_GUARD_OFFICIAL_REVIEW":   "true",
 		"GITHUB_EVENT_NAME":               "push",
 		"GITHUB_REF_TYPE":                 "tag",
 		"GITHUB_REF_NAME":                 "v1.2.3",
@@ -38,7 +39,7 @@ func TestReadInputNormalizesTagVersionAndActionFields(t *testing.T) {
 	if input.Operation != action.OperationBuild || input.ConfigPath != ".github/lazycat-action.yml" || input.ImageID != "web" {
 		t.Fatalf("input=%#v", input)
 	}
-	if input.Version != "1.2.3" || input.Tag != "v1.2.3" || !input.DryRun || input.SourceDateEpoch != 1783641600 {
+	if input.Version != "1.2.3" || input.Tag != "v1.2.3" || !input.DryRun || !input.GuardOfficialReview || input.SourceDateEpoch != 1783641600 {
 		t.Fatalf("input=%#v", input)
 	}
 	if input.ExpectedSHA256 != strings.Repeat("a", 64) {

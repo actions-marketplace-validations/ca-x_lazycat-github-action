@@ -86,6 +86,12 @@
       "mustNotInclude": ["retry every 4xx", "print the response body", "fail the private publication"]
     },
     {
+      "id": "official-review-newer-candidate-continuation",
+      "prompt": "An official review for version 0.10.55 is pending, but the version-source image now selects 0.10.56. Configure automatic direct publication to submit the newer candidate, while still pausing when the review already covers the selected candidate.",
+      "mustInclude": ["continue_if_newer_version: true", "default", "equal", "newer", "older", "before", "same selected candidate", "Git version source", "fail closed"],
+      "mustNotInclude": ["dry-run image check", "always pause", "copy mirror image", "continue_if_newer_version: false by default"]
+    },
+    {
       "id": "updated-tag-and-target-architecture",
       "prompt": "Docker Hub updated v1.2.15 after v1.2.26. Prefer the most recently updated tag and target a future arm64 LazyCat device without changing defaults for other repositories.",
       "mustInclude": ["sort: updated", "last_updated", "project.target_arch", "arm64", "allow_downgrade: false"],

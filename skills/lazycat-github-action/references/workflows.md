@@ -41,6 +41,8 @@ These ordinary inputs and GitHub Variables contain only public Registry/path pre
 
 For `operation: auto`, a manual `workflow_dispatch` checks an image version source but builds a Git version source, reading `package.yml.version` when no explicit version is supplied. Set the reusable workflow input `version: 1.2.3` to request an explicit build version. Tag pushes build and schedules check images. Explicit operations otherwise keep their requested behavior, but `check` rejects Tag and Release events before image inspection or delivery.
 
+For automatic scheduled or manually dispatched direct publication with the official store enabled, `stores.official.continue_if_newer_version` defaults to true. A pending review equal to or newer than the selected version-source image candidate pauses the workflow; an older review lets that same candidate continue. The comparison happens before mirror verification, LazyCat delivery, and project-file edits; mutable `bump: patch` candidates are planned from the persisted source digest. The reusable workflow repeats the authenticated comparison against the final verified LPK immediately before official upload. Set the option to false to pause for every pending review. Git version sources, missing mutable digest baselines, and invalid/non-SemVer comparisons fail closed by pausing or returning an error; explicit operations, dry runs, `pull` strategy, and Tag/Release publication keep their existing behavior.
+
 ## Tag source build
 
 ```yaml

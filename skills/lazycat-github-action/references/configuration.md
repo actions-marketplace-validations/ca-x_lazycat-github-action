@@ -25,6 +25,7 @@ images: []
 stores:
   official:
     enabled: false
+    continue_if_newer_version: true
     skip_if_version_exists: false
     retry:
       enabled: false
@@ -116,6 +117,8 @@ delivery:
 
 Resolution precedence is runtime environment mapping, historical `image_template`, then the built-in Docker Hub/GHCR default. New configurations keep `source` explicit. During migration only, mirror delivery may recover a missing source from the Manifest `upstream` comment or a recognized built-in/configured mirror reference. It never writes that recovered source back to `.github/lazycat-action.yml` and fails before Registry access when recovery is ambiguous.
 
+Mirror verification is a read-only Registry operation and reports `MIRROR_VERIFICATION_FAILED`; it does not use the LazyCat image-copy path.
+
 ## Build environment
 
 Buildscripts receive version, tag, channel, source date, and LazyCat target variables derived from `project.target_arch`. They do not receive LazyCat credentials, private-store credentials, Registry credentials, GitHub tokens, or GitHub control-file paths.
@@ -141,6 +144,7 @@ update:
 stores:
   official:
     enabled: true
+    continue_if_newer_version: true
     skip_if_version_exists: true
     create_if_missing: true
     changelog_locales: [zh, en]
@@ -184,6 +188,8 @@ The additional information and screenshot fields are optional. Automatic informa
 Screenshot paths are relative to `project.root` and must name committed local PNG/JPEG regular files. Remote URLs are unsupported. Inputs are limited to 15 MiB and 320-3840 pixels in both dimensions, then center-cropped to 16:9 and encoded as PNG. Parent traversal, absolute paths, symbolic links, unsupported formats, and unsafe filenames fail closed. Safe Action diagnostics may expose only the repository-relative screenshot path and an allowlisted reason.
 
 For agent-generated screenshots, use `agent-browser` to open the application at project-confirmed PC/mobile viewports and states, capture files such as `.github/screenshots/pc-1.png` and `.github/screenshots/mobile-1.png`, verify the minimum counts, then commit and push them to a ref the reusable workflow will checkout. The Action reads the checkout; an uncommitted or unpushed file on the agent's machine is unavailable to GitHub Actions.
+
+`continue_if_newer_version` defaults to true. In an automatic scheduled or manually dispatched direct-publication run, a pending official review is compared with the selected version-source image candidate before mirror verification, LazyCat delivery, or file edits. Mutable `bump: patch` candidates use the persisted source digest to select the current version for an unchanged digest or the next patch for a changed digest; a missing trusted baseline fails closed, and LazyCat delivery copies the selected source through that digest-pinned reference. An equal or newer review pauses the run; an older review allows the same selected candidate to continue through publication. The reusable workflow performs a second authenticated comparison against the final verified LPK immediately before official upload. Set false to pause for every pending review without selecting an image and at final publication. Git version sources always pause when a review is pending. Invalid/non-SemVer comparisons and review lookup/authentication failures fail closed. Explicit operations, dry runs, `pull` strategy, and Tag/Release publication do not use this gate.
 
 `skip_if_version_exists` defaults to false. When true, the Action anonymously queries the exact package after LPK verification. Equality skips with `skipReason: version-already-online`. When both values are valid SemVer, a newer online version skips with `skipReason: online-version-newer` while `allow_downgrade: false`; explicit `allow_downgrade: true` permits publishing. A non-SemVer value uses exact equality only. All skips happen before resolving official credentials. Anonymous lookups make up to three attempts with exponential backoff for status-less connection failures, HTTP 429, and HTTP 5xx. Not-found continues; other errors or retry exhaustion fail closed. `dry-run` does not query.
 

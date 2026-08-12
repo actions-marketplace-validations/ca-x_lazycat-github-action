@@ -15,6 +15,8 @@ import (
 	"github.com/lib-x/lzc-toolkit-go/appstore"
 )
 
+var ErrMirrorVerification = errors.New("mirror verification failed")
+
 type Copier interface {
 	CopyImage(context.Context, appstore.CopyImageRequest) (appstore.CopyImageResult, error)
 }
@@ -144,10 +146,10 @@ func (resolver Resolver) Deliver(ctx context.Context, request Request) (Result, 
 			}
 			current, inspectErr := resolver.inspect(ctx, request.CurrentRef, target)
 			if inspectErr != nil {
-				return Result{}, fmt.Errorf("inspect current mirror image %q: %w", request.CurrentRef, inspectErr)
+				return Result{}, fmt.Errorf("%w: inspect current mirror image %q: %w", ErrMirrorVerification, request.CurrentRef, inspectErr)
 			}
 			if !strings.EqualFold(strings.TrimSpace(current.Digest), currentDigest) {
-				return Result{}, fmt.Errorf("current mirror digest %q does not match pinned digest %q", current.Digest, currentDigest)
+				return Result{}, fmt.Errorf("%w: current mirror digest %q does not match pinned digest %q", ErrMirrorVerification, current.Digest, currentDigest)
 			}
 			result.CurrentDigest = currentDigest
 			sourceDigest, digestErr := normalizedDigest(request.SourceDigest)
@@ -167,13 +169,13 @@ func (resolver Resolver) Deliver(ctx context.Context, request Request) (Result, 
 		}
 		mirror, err := resolver.inspect(ctx, result.RuntimeRef, target)
 		if err != nil {
-			return Result{}, fmt.Errorf("inspect mirror image %q: %w", runtimeRef, err)
+			return Result{}, fmt.Errorf("%w: inspect mirror image %q: %w", ErrMirrorVerification, runtimeRef, err)
 		}
 		if mirror.Platform != target.Platform() {
-			return Result{}, fmt.Errorf("mirror image %q uses platform %q instead of %q", runtimeRef, mirror.Platform, target.Platform())
+			return Result{}, fmt.Errorf("%w: mirror image %q uses platform %q instead of %q", ErrMirrorVerification, runtimeRef, mirror.Platform, target.Platform())
 		}
 		if !strings.EqualFold(strings.TrimSpace(mirror.Digest), strings.TrimSpace(request.SourceDigest)) {
-			return Result{}, fmt.Errorf("mirror digest %q does not match source digest %q", mirror.Digest, request.SourceDigest)
+			return Result{}, fmt.Errorf("%w: mirror digest %q does not match source digest %q", ErrMirrorVerification, mirror.Digest, request.SourceDigest)
 		}
 		if request.Mutable {
 			result.DigestChanged = !strings.EqualFold(strings.TrimSpace(result.CurrentDigest), strings.TrimSpace(request.SourceDigest))
@@ -216,14 +218,23 @@ func (resolver Resolver) Deliver(ctx context.Context, request Request) (Result, 
 		if resolver.Copier == nil {
 			return Result{}, errors.New("LazyCat delivery requires an authenticated image copier")
 		}
+		copySourceRef := request.SourceRef
+		if request.Mutable {
+			sourceDigest, digestErr := normalizedDigest(request.SourceDigest)
+			if digestErr != nil {
+				return Result{}, digestErr
+			}
+			copySourceRef, _, _ = strings.Cut(copySourceRef, "@")
+			copySourceRef += "@" + sourceDigest
+		}
 		copied, err := resolver.Copier.CopyImage(ctx, appstore.CopyImageRequest{
-			Image: request.SourceRef, Platform: target.Arch, OnProgress: request.OnProgress,
+			Image: copySourceRef, Platform: target.Arch, OnProgress: request.OnProgress,
 		})
 		if err != nil {
 			return Result{}, fmt.Errorf("copy image to LazyCat registry: %w", err)
 		}
-		if strings.TrimSpace(copied.SourceImage) != request.SourceRef || copied.Platform != target.Arch || !strings.HasPrefix(strings.TrimSpace(copied.LazyCatImage), "registry.lazycat.cloud/") || !copied.Progress.Finished {
-			return Result{}, fmt.Errorf("invalid LazyCat copy result for %q", request.SourceRef)
+		if strings.TrimSpace(copied.SourceImage) != copySourceRef || copied.Platform != target.Arch || !strings.HasPrefix(strings.TrimSpace(copied.LazyCatImage), "registry.lazycat.cloud/") || !copied.Progress.Finished {
+			return Result{}, fmt.Errorf("invalid LazyCat copy result for %q", copySourceRef)
 		}
 		result.RuntimeRef = copied.LazyCatImage
 		result.Copied = true

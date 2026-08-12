@@ -27,23 +27,25 @@ import (
 	"github.com/ca-x/lazycat-github-action/internal/project"
 	"github.com/ca-x/lazycat-github-action/internal/publishflow"
 	"github.com/ca-x/lazycat-github-action/internal/registry"
+	"github.com/ca-x/lazycat-github-action/internal/store/official"
 	"github.com/ca-x/lazycat-github-action/internal/yamledit"
 	lpkgo "github.com/lib-x/lzc-toolkit-go"
 	"github.com/lib-x/lzc-toolkit-go/appstore"
 )
 
 const (
-	CodeConfigInvalid           = "CONFIG_INVALID"
-	CodeProjectUnsupported      = "PROJECT_UNSUPPORTED"
-	CodeVersionNotFound         = "VERSION_NOT_FOUND"
-	CodeVersionDowngradeBlocked = "VERSION_DOWNGRADE_BLOCKED"
-	CodeBuildFailed             = "BUILD_FAILED"
-	CodeLPKInvalid              = "LPK_INVALID"
-	CodePlatformNotFound        = "PLATFORM_NOT_FOUND"
-	CodeImageCopyFailed         = "IMAGE_COPY_FAILED"
-	CodeReleaseAssetMissing     = "RELEASE_ASSET_MISSING"
-	CodeStoreAuthFailed         = "STORE_AUTH_FAILED"
-	CodeStorePublishFailed      = "STORE_PUBLISH_FAILED"
+	CodeConfigInvalid            = "CONFIG_INVALID"
+	CodeProjectUnsupported       = "PROJECT_UNSUPPORTED"
+	CodeVersionNotFound          = "VERSION_NOT_FOUND"
+	CodeVersionDowngradeBlocked  = "VERSION_DOWNGRADE_BLOCKED"
+	CodeBuildFailed              = "BUILD_FAILED"
+	CodeLPKInvalid               = "LPK_INVALID"
+	CodePlatformNotFound         = "PLATFORM_NOT_FOUND"
+	CodeImageCopyFailed          = "IMAGE_COPY_FAILED"
+	CodeMirrorVerificationFailed = "MIRROR_VERIFICATION_FAILED"
+	CodeReleaseAssetMissing      = "RELEASE_ASSET_MISSING"
+	CodeStoreAuthFailed          = "STORE_AUTH_FAILED"
+	CodeStorePublishFailed       = "STORE_PUBLISH_FAILED"
 )
 
 type Operation string
@@ -75,6 +77,7 @@ type Input struct {
 	WorkflowGoVersion     string
 	WorkflowNodeVersion   string
 	WorkflowRustToolchain string
+	GuardOfficialReview   bool
 	DryRun                bool
 }
 
@@ -331,6 +334,7 @@ func Run(ctx context.Context, input Input, dependencies Dependencies) (Result, e
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	logger.Info("execution selected", "operation", operation, "mode", executionMode(operation, cfg), "package", info.PackageID, "version", info.Version, "project_kind", info.Kind, "target", cfg.Project.Target().Platform())
+	officialReviewVersion := ""
 	if shouldPauseForOfficialReview(input, requestedOperation, operation, cfg) {
 		if dependencies.WaitingReviewVersion == nil {
 			return Result{}, actionError(CodeConfigInvalid, "official waiting-review lookup dependency is unavailable", nil)
@@ -340,31 +344,46 @@ func Run(ctx context.Context, input Input, dependencies Dependencies) (Result, e
 			return Result{}, mapWaitingReviewError(lookupErr)
 		}
 		if found {
-			input.Version = info.Version
-			if input.Tag == "" && info.Version != "" {
-				input.Tag = "v" + info.Version
+			version = strings.TrimSpace(version)
+			if version == "" {
+				return Result{}, actionError(CodeConfigInvalid, "official waiting-review lookup returned an empty version", nil)
 			}
-			result := baseResult(input, dependencies.Host, info, cfg)
-			result.Operation = string(operation)
-			result.OfficialReviewPending = true
-			result.OfficialReviewVersion = version
-			logger.Info("automatic direct publication paused for official review", "package", info.PackageID, "review_version", version)
-			if err := writeResult(&result, resultDirectory(dependencies.ResultDir, info.Root)); err != nil {
-				return Result{}, actionError(CodeStorePublishFailed, "unable to write paused Action result", err)
+			if operation == OperationCheck && cfg.Stores.Official.ShouldContinueIfNewerVersion() {
+				officialReviewVersion = version
+				logger.Info("official review found; checking whether the selected image version is newer", "package", info.PackageID, "review_version", version)
+			} else {
+				return pausedOfficialReviewResult(input, operation, version, info, cfg, dependencies, logger, "automatic direct publication paused for official review")
 			}
-			return result, nil
 		}
 	}
 	switch operation {
 	case OperationBuild:
 		return runBuild(ctx, input, cfg, info, dependencies)
 	case OperationCheck:
-		return runCheck(ctx, input, cfg, info, dependencies)
+		return runCheck(ctx, input, cfg, info, officialReviewVersion, dependencies)
 	case OperationPublishOfficial, OperationPublishPrivate:
 		return runPublish(ctx, input, operation, cfg, info, dependencies)
 	default:
 		return Result{}, actionError(CodeConfigInvalid, fmt.Sprintf("unsupported operation %q", operation), nil)
 	}
+}
+
+func pausedOfficialReviewResult(input Input, operation Operation, reviewVersion string, info project.Info, cfg config.Config, dependencies Dependencies, logger *slog.Logger, message string) (Result, error) {
+	if input.Version == "" {
+		input.Version = info.Version
+	}
+	if input.Tag == "" && info.Version != "" {
+		input.Tag = "v" + info.Version
+	}
+	result := baseResult(input, dependencies.Host, info, cfg)
+	result.Operation = string(operation)
+	result.OfficialReviewPending = true
+	result.OfficialReviewVersion = reviewVersion
+	logger.Info(message, "package", info.PackageID, "review_version", reviewVersion)
+	if err := writeResult(&result, resultDirectory(dependencies.ResultDir, info.Root)); err != nil {
+		return Result{}, actionError(CodeStorePublishFailed, "unable to write paused Action result", err)
+	}
+	return result, nil
 }
 
 func shouldPauseForOfficialReview(input Input, requested, resolved Operation, cfg config.Config) bool {
@@ -417,9 +436,17 @@ func runPublish(ctx context.Context, input Input, operation Operation, cfg confi
 	published, err := dependencies.Publish(ctx, publishflow.Request{
 		Target: target, Config: cfg, Project: info, LPKPath: input.LPKPath, Version: input.Version,
 		Changelog: input.Changelog, DownloadURL: input.DownloadURL, ExpectedSHA256: input.ExpectedSHA256,
-		DryRun: input.DryRun,
+		GuardOfficialReview: input.GuardOfficialReview, DryRun: input.DryRun,
 	})
 	if err != nil {
+		var pendingReview *official.PendingReviewError
+		if operation == OperationPublishOfficial && input.GuardOfficialReview && errors.As(err, &pendingReview) {
+			logger := dependencies.Logger
+			if logger == nil {
+				logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+			}
+			return pausedOfficialReviewResult(input, operation, pendingReview.Version, info, cfg, dependencies, logger, "official publication paused after final waiting-review recheck")
+		}
 		return Result{}, mapPublishError(err)
 	}
 	encodedStores, err := json.Marshal(published)
@@ -499,7 +526,7 @@ func runBuild(ctx context.Context, input Input, cfg config.Config, info project.
 	return result, nil
 }
 
-func runCheck(ctx context.Context, input Input, cfg config.Config, info project.Info, dependencies Dependencies) (Result, error) {
+func runCheck(ctx context.Context, input Input, cfg config.Config, info project.Info, officialReviewVersion string, dependencies Dependencies) (Result, error) {
 	if cfg.Update.VersionSource.Type != config.VersionSourceImage {
 		return Result{}, actionError(CodeConfigInvalid, "check operation requires update.version_source.type=image", nil)
 	}
@@ -513,9 +540,16 @@ func runCheck(ctx context.Context, input Input, cfg config.Config, info project.
 		return Result{}, actionError(CodeConfigInvalid, "image check dependency is unavailable", nil)
 	}
 	checked, err := dependencies.CheckImages(ctx, imageflow.Request{
-		Config: cfg, Project: info, ImageID: input.ImageID, DryRun: input.DryRun,
+		Config: cfg, Project: info, ImageID: input.ImageID, DryRun: input.DryRun, OfficialReviewVersion: officialReviewVersion,
 	})
 	if err != nil {
+		if officialReviewVersion != "" && errors.Is(err, imageflow.ErrOfficialReviewCoversCandidate) {
+			logger := dependencies.Logger
+			if logger == nil {
+				logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+			}
+			return pausedOfficialReviewResult(input, OperationCheck, officialReviewVersion, info, cfg, dependencies, logger, "automatic direct publication paused because official review covers the selected candidate")
+		}
 		return Result{}, mapImageError(err, cfg.Project.Target())
 	}
 	input.Version = checked.Version
@@ -597,6 +631,8 @@ func mapImageError(err error, target platform.Target) *Error {
 		return actionError(CodeVersionNotFound, "no image version matched the configured channel", err)
 	case errors.Is(err, imageflow.ErrPlatformNotFound):
 		return actionError(CodePlatformNotFound, fmt.Sprintf("the configured image has no usable %s candidate", target.Platform()), err)
+	case errors.Is(err, imageflow.ErrMirrorVerificationFailed):
+		return actionError(CodeMirrorVerificationFailed, "mirror image verification failed", err)
 	case errors.Is(err, imageflow.ErrDeliveryFailed):
 		return actionError(CodeImageCopyFailed, "image delivery failed", err)
 	default:

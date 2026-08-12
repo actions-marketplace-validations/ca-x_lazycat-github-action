@@ -128,7 +128,7 @@ runs:
       id: run
       shell: bash
       env:
-        LAZYCAT_ACTION_VERSION: v1.2.8
+        LAZYCAT_ACTION_VERSION: v1.2.9
         INPUT_OPERATION: ${{ inputs.operation }}
         INPUT_CONFIG: ${{ inputs.config }}
         INPUT_IMAGE_ID: ${{ inputs['image-id'] }}
@@ -138,6 +138,7 @@ runs:
         INPUT_DOWNLOAD_URL: ${{ inputs['download-url'] }}
         INPUT_SHA256: ${{ inputs.sha256 }}
         INPUT_DRY_RUN: ${{ inputs['dry-run'] }}
+        LAZYCAT_GUARD_OFFICIAL_REVIEW: ${{ env.LAZYCAT_GUARD_OFFICIAL_REVIEW }}
         LAZYCAT_DOCKER_MIRROR: ${{ inputs['docker-mirror'] || env.LAZYCAT_DOCKER_MIRROR }}
         LAZYCAT_GHCR_MIRROR: ${{ inputs['ghcr-mirror'] || env.LAZYCAT_GHCR_MIRROR }}
         LAZYCAT_REGISTRY_MIRRORS: ${{ inputs['registry-mirrors'] || env.LAZYCAT_REGISTRY_MIRRORS }}

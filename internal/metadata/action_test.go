@@ -166,9 +166,18 @@ func TestReusableWorkflowContractAndActionRefs(t *testing.T) {
 	for _, contract := range []string{
 		"if: ${{ !cancelled() && steps.lazycat.outputs.update-strategy == 'publish' && steps.lazycat.outputs.official-store-enabled == 'true'",
 		"continue-on-error: true",
+		"LAZYCAT_GUARD_OFFICIAL_REVIEW: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && inputs.operation == 'auto' }}",
 	} {
 		if !strings.Contains(officialStep, contract) {
 			t.Fatalf("official publish step is missing isolation contract %q", contract)
+		}
+	}
+	for _, contract := range []string{
+		"official-review-pending: ${{ steps.lazycat.outputs.official-review-pending == 'true' || steps.publish-official.outputs.official-review-pending == 'true' }}",
+		"official-review-version: ${{ steps.publish-official.outputs.official-review-version || steps.lazycat.outputs.official-review-version }}",
+	} {
+		if !strings.Contains(workflow, contract) {
+			t.Fatalf("workflow is missing final review recheck output contract %q", contract)
 		}
 	}
 	if strings.Contains(officialStep, "continue-on-error: ${{") {
@@ -396,9 +405,10 @@ func TestActionMetadataExposesStableContract(t *testing.T) {
 		t.Fatalf("runs.steps=%d", len(document.Runs.Steps))
 	}
 	for name, want := range map[string]string{
-		"LAZYCAT_DOCKER_MIRROR":    "${{ inputs['docker-mirror'] || env.LAZYCAT_DOCKER_MIRROR }}",
-		"LAZYCAT_GHCR_MIRROR":      "${{ inputs['ghcr-mirror'] || env.LAZYCAT_GHCR_MIRROR }}",
-		"LAZYCAT_REGISTRY_MIRRORS": "${{ inputs['registry-mirrors'] || env.LAZYCAT_REGISTRY_MIRRORS }}",
+		"LAZYCAT_GUARD_OFFICIAL_REVIEW": "${{ env.LAZYCAT_GUARD_OFFICIAL_REVIEW }}",
+		"LAZYCAT_DOCKER_MIRROR":         "${{ inputs['docker-mirror'] || env.LAZYCAT_DOCKER_MIRROR }}",
+		"LAZYCAT_GHCR_MIRROR":           "${{ inputs['ghcr-mirror'] || env.LAZYCAT_GHCR_MIRROR }}",
+		"LAZYCAT_REGISTRY_MIRRORS":      "${{ inputs['registry-mirrors'] || env.LAZYCAT_REGISTRY_MIRRORS }}",
 	} {
 		if got := document.Runs.Steps[0].Environment[name]; got != want {
 			t.Fatalf("action env %s=%#v want=%q", name, got, want)
@@ -407,8 +417,8 @@ func TestActionMetadataExposesStableContract(t *testing.T) {
 	if strings.Contains(string(data), "vars.") {
 		t.Fatal("composite action metadata must not reference the unsupported vars context")
 	}
-	if got := actionBootstrapVersion(t); got != "v1.2.8" {
-		t.Fatalf("action.yml bootstrap version=%q, want v1.2.8", got)
+	if got := actionBootstrapVersion(t); got != "v1.2.9" {
+		t.Fatalf("action.yml bootstrap version=%q, want v1.2.9", got)
 	}
 }
 

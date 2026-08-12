@@ -1195,6 +1195,57 @@ func TestPublisherReportsOfficialReviewFailureStage(t *testing.T) {
 	}
 }
 
+func TestPublisherGuardRechecksWaitingReviewImmediatelyBeforeUpload(t *testing.T) {
+	path, digest := publishLPK(t)
+	for _, test := range []struct {
+		name          string
+		waiting       string
+		candidate     string
+		continueNewer bool
+		wantPending   bool
+		wantUploads   int
+	}{
+		{name: "equal pauses", waiting: "1.0.0", candidate: "1.0.0", continueNewer: true, wantPending: true},
+		{name: "older continues", waiting: "0.9.0", candidate: "1.0.0", continueNewer: true, wantUploads: 1},
+		{name: "disabled pauses older", waiting: "0.9.0", candidate: "1.0.0", wantPending: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			uploads := 0
+			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				switch request.URL.Path {
+				case "/api/v3/developer/app/cloud.lazycat.apps.publish-demo/review/waiting":
+					_, _ = fmt.Fprintf(response, `{"version":{"name":%q}}`, test.waiting)
+				case "/api/v3/developer/app/check/exist":
+					_, _ = response.Write([]byte(`{"exist":true}`))
+				case "/api/v3/developer/app/lpk/upload":
+					uploads++
+					_, _ = fmt.Fprintf(response, `{"package":"cloud.lazycat.apps.publish-demo","version":%q,"iconPath":"/icon.png","url":"/demo.lpk","sha256":%q,"unsupportedPlatforms":[],"minOsVersion":"1.3.0","lpkSize":123,"imageSize":0}`, test.candidate, digest)
+				case "/api/v3/developer/app/cloud.lazycat.apps.publish-demo/review/create":
+					_, _ = response.Write([]byte(`{"success":true}`))
+				default:
+					http.NotFound(response, request)
+				}
+			}))
+			t.Cleanup(server.Close)
+			_, err := (official.Publisher{BaseURL: server.URL, HTTPClient: server.Client()}).Publish(t.Context(), official.Request{
+				Provider: auth.StaticToken("ci-token"), LPKPath: path, PackageID: "cloud.lazycat.apps.publish-demo",
+				Version: test.candidate, SHA256: digest, Changelog: "Release notes", Locales: []string{"en"},
+				GuardPendingReview: true, ContinueIfNewerVersion: test.continueNewer,
+			})
+			var pending *official.PendingReviewError
+			if test.wantPending {
+				if !errors.As(err, &pending) || pending.Version != test.waiting || uploads != 0 {
+					t.Fatalf("err=%v pending=%#v uploads=%d", err, pending, uploads)
+				}
+				return
+			}
+			if err != nil || uploads != test.wantUploads {
+				t.Fatalf("err=%v uploads=%d", err, uploads)
+			}
+		})
+	}
+}
+
 func TestPublisherUsesToolkitProtocolAndReturnsVerifiedResult(t *testing.T) {
 	path, digest := publishLPK(t)
 	var created, uploaded, reviewed bool
