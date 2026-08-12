@@ -21,6 +21,8 @@ Both public entry points are supported and follow the floating `v1` release tag:
 | Composite Action | `ca-x/lazycat-github-action@v1` | Your job already owns checkout, permissions, toolchain setup, and GitHub mutations. |
 | Reusable Workflow | `ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1` | You want the complete LazyCat CI/CD path, including toolchains, pull requests, Artifacts, tags, Releases, assets, and store publication. |
 
+Why is the reusable-workflow reference longer than an Action reference such as `KSXGitHub/github-actions-deploy-aur@v4.2.0`? GitHub uses different syntax for the two entry-point types. A repository-root `action.yml` is a step-level Action and uses the short `<owner>/<repo>@<ref>` form. A reusable workflow is a job-level workflow file, so GitHub requires `<owner>/<repo>/.github/workflows/<file>@<ref>`. The longer path does not mean a different repository or installation method; it selects the complete workflow instead of the single composite step.
+
 Current official checkout and Node setup Actions use the Node.js 24 runtime. Self-hosted GitHub Actions Runners must be `v2.327.1` or newer. Caller-owned composite jobs should use `actions/checkout@v7` and `actions/setup-node@v7`; the reusable workflow also uses the current supported major lines for setup-go, github-script, Docker setup/login, pull-request creation, and build provenance.
 
 Use the reusable workflow for normal CI/CD:

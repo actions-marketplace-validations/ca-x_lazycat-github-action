@@ -21,6 +21,8 @@ Action 使用 [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-t
 | Composite Action | `ca-x/lazycat-github-action@v1` | 现有 job 已经负责 checkout、权限、工具链安装和 GitHub 写操作。 |
 | Reusable Workflow | `ca-x/lazycat-github-action/.github/workflows/lazycat.yml@v1` | 需要完整 LazyCat CI/CD，包括工具链、Pull Request、Artifact、tag、Release、Asset 和商店发布。 |
 
+为什么 reusable workflow 的写法比 `KSXGitHub/github-actions-deploy-aur@v4.2.0` 这类 Action 长？因为 GitHub 对两种入口规定了不同语法。仓库根目录的 `action.yml` 属于 step 级 Action，使用较短的 `<owner>/<repo>@<ref>`；reusable workflow 属于 job 级工作流文件，必须写成 `<owner>/<repo>/.github/workflows/<file>@<ref>`。路径较长不代表需要安装另一个仓库，只是明确选择“完整自动化工作流”，而不是单个 composite step。
+
 当前官方 checkout 和 Node setup Action 使用 Node.js 24 运行时；self-hosted GitHub Actions Runner 必须为 `v2.327.1` 或更高版本。由调用方管理的 composite job 应使用 `actions/checkout@v7` 和 `actions/setup-node@v7`；reusable workflow 内部的 setup-go、github-script、Docker setup/login、Pull Request 创建和构建证明 Action 也使用当前受支持的主版本。
 
 一般 CI/CD 推荐调用 reusable workflow：
