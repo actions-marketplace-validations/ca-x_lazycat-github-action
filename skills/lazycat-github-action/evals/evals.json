@@ -132,6 +132,12 @@
       "prompt": "Upstream tags look like release-20260807.03. Select the whole release family and map it to SemVer 20260807.3.0.",
       "mustInclude": ["tag_regex", "version_regex", "(?P<version>", "(?P<build>", "version_template", "{version}.{build}.0"],
       "mustNotInclude": ["tag_regex: '^release-20260807\\.03$'", "custom script", "current tag only"]
+    },
+    {
+      "id": "mixed-weekly-lts-version-selection",
+      "prompt": "A Docker Hub repository mixes plain two-part weekly tags such as 2.578, three-part LTS tags such as 2.568.2, JDK-suffixed variants, and latest. The app tracks weekly releases and package.yml is 2.578.0. Fix default stable selecting the lower LTS version and CONFIG_INVALID after switching to updated sorting.",
+      "mustInclude": ["channel: custom", "sort: semver", "tag_regex", "version_regex", "(?P<version>", "version_template", "{version}.0", "allow_downgrade: false"],
+      "mustNotInclude": ["sort: created", "channel: nightly", "version_template: '{version}'", "tag_regex: '^2\\.578$'"]
     }
   ]
 }

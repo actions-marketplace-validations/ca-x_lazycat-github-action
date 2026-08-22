@@ -70,6 +70,29 @@ Design `tag_regex` to filter a release family rather than the currently selected
 
 For example, to remain on the v2 release line, use `channel: stable`, `sort: semver`, and `tag_regex: '^v?2\.\d+\.\d+$'`. Do not use `tag_regex: '^2\.2\.0$'` after observing version 2.2.0: that immutable exact match excludes every future patch and minor release and is not an automatic update strategy. If the user explicitly wants an immutable one-version pin, state that future discovery is disabled. Exact filters such as `^latest$` are appropriate only for mutable channel names paired with digest comparison, or for that explicit no-update pin.
 
+### Mixed immutable tag families
+
+Some repositories publish several incompatible release families together. The Jenkins image, for example, combines plain two-part weekly tags such as `2.578`, three-part LTS tags such as `2.568.2`, runtime variants such as `2.578-jdk21`, and aliases such as `latest`. If the application intentionally follows the weekly family, default stable discovery can select the LTS family instead. `sort: updated` is also the wrong repair: these are immutable releases whose winner is defined by mapped SemVer, not Docker Hub `last_updated` metadata.
+
+Filter the intended family before mapping and sorting:
+
+```yaml
+images:
+  - id: ci-server
+    target: service
+    service: ci-server
+    source: jenkins/jenkins
+    channel: custom
+    sort: semver
+    tag_regex: '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+    version_regex: '^(?P<version>(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$'
+    version_template: '{version}.0'
+    delivery:
+      mode: mirror
+```
+
+This admits current and future plain weekly tags, rejects LTS/JDK/alias tags, and maps `2.578` to strict package SemVer `2.578.0`. Keep `update.allow_downgrade: false`; a `VERSION_DOWNGRADE_BLOCKED` result after selecting the wrong family is evidence to repair filtering and mapping, not permission to enable rollback. See [`lazycat-contrib/jenkins-lzcapp`](https://github.com/lazycat-contrib/jenkins-lzcapp) for the maintained real-repository configuration.
+
 Nightly mutable tags become deterministic SemVer values based on creation time and the configured target-platform digest.
 
 For a registry that exposes only a mutable tag such as `latest`, configure the image version source with `bump: patch`, plus `channel: custom`, `sort: created`, and an exact `tag_regex`. The Action compares the selected target-platform digest with the currently delivered digest. Equality preserves the current package version; a change increments only the stable SemVer patch component. Bump mode rejects prerelease/build package versions, `allow_downgrade: true`, `version_regex`, non-created rules, and unverified mirrors. Mutable direct/mirror references are digest-pinned; mutable mirrors require `require_digest_match: true`. Official publication still requires LazyCat delivery.

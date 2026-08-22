@@ -81,6 +81,7 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 		t.Fatalf("eval metadata=%#v", evals)
 	}
 	seen := make(map[string]struct{}, len(evals.Cases))
+	mixedTagEvalContract := ""
 	for _, eval := range evals.Cases {
 		if eval.ID == "" || eval.Prompt == "" || len(eval.MustInclude) == 0 || len(eval.MustNotInclude) == 0 {
 			t.Fatalf("incomplete eval=%#v", eval)
@@ -89,6 +90,19 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 			t.Fatalf("duplicate eval id %q", eval.ID)
 		}
 		seen[eval.ID] = struct{}{}
+		if eval.ID == "mixed-weekly-lts-version-selection" {
+			negativeAssertions := strings.Join(eval.MustNotInclude, "\n")
+			for _, ambiguous := range []string{"sort: updated", "allow_downgrade: true", "custom script"} {
+				if strings.Contains(negativeAssertions, ambiguous) {
+					t.Fatalf("mixed weekly/LTS eval must not reject correct prohibitive language %q", ambiguous)
+				}
+			}
+			mixedTagEvalContract = strings.Join([]string{
+				eval.Prompt,
+				strings.Join(eval.MustInclude, "\n"),
+				negativeAssertions,
+			}, "\n")
+		}
 	}
 	if _, found := seen["dual-store-version-deduplication"]; !found {
 		t.Fatal("evals are missing dual-store version deduplication coverage")
@@ -128,6 +142,18 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 	}
 	if _, found := seen["tag-filter-version-mapping-separation"]; !found {
 		t.Fatal("evals are missing tag-filter/version-mapping separation coverage")
+	}
+	if _, found := seen["mixed-weekly-lts-version-selection"]; !found {
+		t.Fatal("evals are missing mixed weekly/LTS version-selection coverage")
+	}
+	for _, required := range []string{
+		"two-part weekly", "three-part LTS", "JDK", "latest",
+		"channel: custom", "sort: semver", "(?P<version>", "{version}.0", "allow_downgrade: false",
+		"sort: created", "channel: nightly", "tag_regex: '^2\\.578$'",
+	} {
+		if !strings.Contains(mixedTagEvalContract, required) {
+			t.Fatalf("mixed weekly/LTS eval contract missing %q", required)
+		}
 	}
 	for _, name := range []string{"references/configuration.md", "references/workflows.md", "assets/lazycat-action.yml"} {
 		data, err := os.ReadFile(filepath.Join(root, name))
@@ -280,8 +306,8 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 	if err := json.Unmarshal(prompts, &promptCases); err != nil {
 		t.Fatal(err)
 	}
-	if len(promptCases) != 20 {
-		t.Fatalf("test-prompts.json cases=%d, want 20", len(promptCases))
+	if len(promptCases) != 21 {
+		t.Fatalf("test-prompts.json cases=%d, want 21", len(promptCases))
 	}
 	promptIDs := make(map[string]string, len(promptCases))
 	for _, prompt := range promptCases {
@@ -310,6 +336,7 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 		"evolvable-version-selection":           {"tag_regex", "标签族", "2.x", "version_regex", "sort", "latest", "不得", "^2\\.2\\.0$"},
 		"major-line-version-selection":          {"v2", "^v?2\\.\\d+\\.\\d+$", "semver", "未来", "2.2.0"},
 		"tag-filter-version-mapping-separation": {"tag_regex", "version_regex", "(?P<version>", "version_template", "筛选", "映射"},
+		"mixed-weekly-lts-version-selection":    {"两段周更", "三段 LTS", "JDK", "channel: custom", "sort: semver", "version_regex", "{version}.0", "allow_downgrade: false", "不得使用 sort: updated"},
 		"official-image-project":                {"continue_if_newer_version: true", "等于或高于", "更旧", "同一候选", "最终校验 LPK", "再次认证复查", "Git 版本源", "SemVer"},
 	} {
 		expected, found := promptIDs[id]
@@ -346,6 +373,10 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 		"filter a release family rather than the currently selected immutable version",
 		"^v?2\\.\\d+\\.\\d+$",
 		"not an automatic update strategy",
+		"Mixed immutable tag families",
+		"2.578-jdk21",
+		"version_template: '{version}.0'",
+		"lazycat-contrib/jenkins-lzcapp",
 	} {
 		if !strings.Contains(configurationText, required) {
 			t.Fatalf("configuration reference missing evolvable version-selection rule %q", required)

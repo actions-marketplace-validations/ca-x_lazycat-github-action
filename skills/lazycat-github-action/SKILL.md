@@ -143,11 +143,14 @@ A version-discovery rule must match a release family that can produce future can
 | Latest stable within major version 2 | `channel: stable`, `sort: semver`, `tag_regex: '^v?2\.\d+\.\d+$'` |
 | Latest supported prerelease line | `channel: beta` plus a family regex that accepts future alpha/beta/rc/preview tags |
 | Custom tag prefix such as `release-2.3.4` | `tag_regex` selects the whole `release-...` family; `version_regex` extracts `(?P<version>...)`; `version_template` normalizes it |
+| Mixed immutable families such as two-part weekly plus three-part LTS/JDK tags | `channel: custom`, `sort: semver`, a `tag_regex` for only the intended family, and `version_regex`/`version_template` to produce strict SemVer |
 | Mutable channel name such as `latest` | exact `tag_regex: '^latest$'` plus digest comparison and `bump: patch` |
 
 `tag_regex` filters candidate tags; `version_regex` and `version_template` map a matched tag to package SemVer; `sort` decides which mapped candidate wins. Do not collapse these separate jobs into a regex for the current version. Exact tag filters are reserved for mutable channel names whose digest changes behind the same tag, or for an intentional one-version pin that the user explicitly wants. An immutable one-version pin is not an automatic update strategy; report that no future tag discovery will occur.
 
 When a tag needs normalization, reference named `version_regex` groups directly in `version_template`, for example `(?P<version>\d{8})\.0*(?P<build>[1-9]\d*)` with `{version}.{build}.0`. Keep the required `version` group. Unknown placeholders and non-SemVer results fail closed; do not add repository-specific rewriting when this mapping is sufficient.
+
+Read the **Mixed immutable tag families** example in [references/configuration.md](references/configuration.md) when one repository combines non-SemVer weekly tags, strict-SemVer LTS tags, suffixed runtime variants, and mutable aliases. [`lazycat-contrib/jenkins-lzcapp`](https://github.com/lazycat-contrib/jenkins-lzcapp) is the maintained real-repository reference for this shape.
 
 For large image repositories, `images[].max_tags` limits raw tag discovery (default `10000`, maximum `50000`) and `images[].max_matching_tags` limits the tags remaining after `tag_regex`/`exclude_regex` (default `10000`, maximum `50000`, never above `max_tags`). Keep defaults unless the upstream has a measured tag count above the default; do not raise an organization-wide limit. For SemVer sorting, rank filtered tag names before manifest inspection and stop after the first usable configured target; continue past a higher tag only when that tag lacks the target platform. `sort: updated` is an explicit Docker Hub-only mode: rank by tag `last_updated`, then mapped SemVer, then tag name, and inspect manifests in that order. Never substitute OCI `config.created` when Docker Hub update metadata is unavailable. Keep full manifest inspection for `created` sorting because the target image creation time is required for ranking.
 
@@ -278,6 +281,7 @@ Before finishing:
 | Wrong service image updated | Correct the explicit `service`; never infer it | STOP if the target is missing or duplicated |
 | Scheduled checks never discover a newer immutable release | Replace the exact current-version `tag_regex` with a release-family filter and the intended `semver`/`updated` sort | If the user truly wants one immutable tag, disable or describe automatic version discovery instead of pretending the pin will update |
 | A custom tag matches but maps to the wrong package version | Keep family selection in `tag_regex`; move extraction into a named-group `version_regex` and normalization into `version_template` | STOP if representative upstream tags cannot be mapped to valid SemVer without guessing |
+| Default stable selection picks an older three-part LTS tag, or switching a mixed immutable repository to `sort: updated` returns `CONFIG_INVALID` | Filter only the intended immutable family, map it to strict SemVer, and use `sort: semver` | Keep `allow_downgrade: false`; do not use `updated` or rollback authorization to compensate for the wrong release family |
 | Templated YAML does not parse | Protect supported standalone controls | STOP on invalid protected YAML or marker collision |
 | Control-line order/hash changed | Restore exact original control lines | STOP without writing if any marker is lost or duplicated |
 | Tracked-LPK inventory fails | Re-run `git ls-files '*.lpk'` and byte accounting | STOP; do not delete from an incomplete inventory |
