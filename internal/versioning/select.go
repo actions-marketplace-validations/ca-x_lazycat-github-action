@@ -20,6 +20,7 @@ type Channel string
 const (
 	ChannelStable  Channel = "stable"
 	ChannelBeta    Channel = "beta"
+	ChannelDate    Channel = "date"
 	ChannelNightly Channel = "nightly"
 	ChannelCustom  Channel = "custom"
 )
@@ -137,7 +138,7 @@ func RankSemVer(rule Rule, candidates []Candidate) ([]Selection, error) {
 		return nil, err
 	}
 	if rule.Sort != SortSemVer || rule.Channel == ChannelNightly {
-		return nil, errors.New("SemVer ranking requires a stable, beta, or custom semver rule")
+		return nil, errors.New("SemVer ranking requires a stable, beta, date, or custom semver rule")
 	}
 	filtered := make([]Candidate, 0, len(candidates))
 	for _, candidate := range candidates {
@@ -163,7 +164,7 @@ func RankUpdated(rule Rule, candidates []Candidate) ([]Selection, error) {
 		return nil, err
 	}
 	if rule.Sort != SortUpdated || rule.Channel == ChannelNightly {
-		return nil, errors.New("updated ranking requires a stable, beta, or custom updated rule")
+		return nil, errors.New("updated ranking requires a stable, beta, date, or custom updated rule")
 	}
 	filtered := make([]Candidate, 0, len(candidates))
 	for _, candidate := range candidates {
@@ -189,7 +190,7 @@ func rankMappedCandidates(rule Rule, filtered []Candidate) ([]Selection, error) 
 		}
 		mapped, err := mapVersion(rule, candidate.Tag)
 		if err != nil {
-			if rule.Channel == ChannelStable || rule.Channel == ChannelBeta {
+			if rule.Channel == ChannelStable || rule.Channel == ChannelBeta || rule.Channel == ChannelDate {
 				continue
 			}
 			return nil, err
@@ -199,7 +200,7 @@ func rankMappedCandidates(rule Rule, filtered []Candidate) ([]Selection, error) 
 			return nil, fmt.Errorf("parse mapped version %q: %w", mapped, err)
 		}
 		switch rule.Channel {
-		case ChannelStable:
+		case ChannelStable, ChannelDate:
 			if parsed.Prerelease() != "" {
 				continue
 			}
@@ -238,7 +239,7 @@ func rankMappedCandidates(rule Rule, filtered []Candidate) ([]Selection, error) 
 
 func validateRule(rule Rule) error {
 	switch rule.Channel {
-	case ChannelStable, ChannelBeta:
+	case ChannelStable, ChannelBeta, ChannelDate:
 		if rule.Sort != SortSemVer && rule.Sort != SortUpdated {
 			return fmt.Errorf("channel %q requires semver or updated sorting", rule.Channel)
 		}
@@ -285,10 +286,39 @@ func mapVersion(rule Rule, tag string) (string, error) {
 	if placeholder := versionTemplatePlaceholderPattern.FindString(value); placeholder != "" {
 		return "", fmt.Errorf("unresolved version template placeholder %q for tag %q", placeholder, tag)
 	}
+	// Explicit regex/template mappings often assemble SemVer components from
+	// fixed-width fields. Canonicalize the core numeric components before the
+	// strict SemVer check so date tags such as 20260626 map to 2026.6.26.
+	if rule.VersionRegex != nil {
+		value = normalizeSemVerCore(value)
+	}
 	if !appversion.IsValid(value) {
 		return "", fmt.Errorf("mapped version %q from tag %q is not valid SemVer", value, tag)
 	}
 	return value, nil
+}
+
+func normalizeSemVerCore(value string) string {
+	coreEnd := strings.IndexAny(value, "-+")
+	if coreEnd < 0 {
+		coreEnd = len(value)
+	}
+	core := value[:coreEnd]
+	parts := strings.Split(core, ".")
+	if len(parts) != 3 {
+		return value
+	}
+	for index, part := range parts {
+		if part == "" || strings.Trim(part, "0123456789") != "" {
+			return value
+		}
+		part = strings.TrimLeft(part, "0")
+		if part == "" {
+			part = "0"
+		}
+		parts[index] = part
+	}
+	return strings.Join(parts, ".") + value[coreEnd:]
 }
 
 func selectNightly(candidates []Candidate) (Selection, error) {

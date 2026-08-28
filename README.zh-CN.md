@@ -4,12 +4,12 @@
 
 `ca-x/lazycat-github-action` 用于检查 Docker 镜像版本、精确更新 LazyCat Manifest、构建 LPK、创建更新 Pull Request，并把校验后的 LPK 上传到 GitHub Release。
 
-Action 使用 [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.5.0`，兼容基线是 `@lazycatcloud/lzc-cli` `2.0.9`。
+Action 使用 [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.6.0`，兼容基线是 `@lazycatcloud/lzc-cli` `2.0.9`。
 
 当前交付范围：
 
 - Milestone 1：静态 Web 和 Exec 构建、LPK 校验、SHA256、amd64 和 arm64 Action 二进制。
-- Milestone 2：stable、beta、nightly 和 custom OCI 检查；LazyCat、direct 和 mirror 镜像交付；Pull Request；Artifact；tag；Release；Release Asset。
+- Milestone 2：stable、beta、date、nightly 和 custom OCI 检查；LazyCat、direct 和 mirror 镜像交付；Pull Request；Artifact；tag；Release；Release Asset。
 - Milestone 3：懒猫官方开发者平台提交、喵喵私有商店提交、完整源码构建示例和仓库内 Agent Skill。
 
 ## 选择使用方式
@@ -239,6 +239,7 @@ with:
 |---|---|
 | `stable` | 默认选择最高正式 SemVer，也可显式使用 Docker Hub `updated` 排序 |
 | `beta` | 默认选择最高预发布 SemVer，也可显式使用 Docker Hub `updated` 排序 |
+| `date` | 将日期格式标签映射为正式 SemVer，也可使用 `semver` 或 Docker Hub `updated` 排序 |
 | `nightly` | 在正则匹配结果中选择目标平台 OCI 创建时间最新的镜像 |
 | `custom` | 使用正则过滤，并显式选择 `semver`、`created` 或 `updated` 排序 |
 
@@ -258,6 +259,20 @@ Beta 示例：
 channel: beta
 tag_regex: '^v?\d+\.\d+\.\d+-(alpha|beta|rc|preview)\.'
 ```
+
+日期标签示例：
+
+```yaml
+channel: date
+tag_regex: '^[0-9]{8}$'
+version_regex: '^(?P<version>[0-9]{4})(?P<month>[0-9]{2})(?P<day>[0-9]{2})$'
+version_template: '{version}.{month}.{day}'
+```
+
+`date` 与 `stable` 使用相同的正式版本排序，但会先应用配置的正则和模板映射。
+模板展开后，SemVer 的三个数字核心字段会统一去掉前导零，因此
+`20260626` 会映射为 `2026.6.26`，`20260101` 会映射为 `2026.1.1`。原有显式消费
+补零捕获组的写法（例如 `0*(?P<build>[1-9]\d*)`）仍然兼容。
 
 Docker Hub 更新时间优先示例：
 
@@ -330,7 +345,7 @@ version_regex: '^(?P<version>\d{8})\.0*(?P<build>[1-9]\d*)$'
 version_template: '{version}.{build}.0' # 20260603.01 -> 20260603.1.0
 ```
 
-`version` 捕获组仍然必填。未知占位符或展开后不是合法 SemVer 时会直接失败。
+`version` 捕获组仍然必填。未知占位符或展开后不是合法 SemVer 时会直接失败。配置了正则/模板映射时，三个 SemVer 数字核心字段会在校验前去掉前导零；预发布和构建标识仍遵循严格 SemVer 规则。
 
 镜像仓库发现使用 `github.com/google/go-containerregistry`。Action 会先应用 `tag_regex` 和 `exclude_regex`。`max_tags` 限制 Registry 返回的原始标签列表，默认 `10000`；仅在已知的大型上游仓库中按镜像显式提高，最大 `50000`。`max_matching_tags` 独立限制筛选后的候选数，默认也是 `10000`，且不得超过 `max_tags`。SemVer 排序先按标签排名；`updated` 先按 Docker Hub 标签元数据排名，两者都按顺序检查 manifest，找到第一个可用的项目目标平台就停止。按创建时间排序因为目标镜像时间参与排名，仍必须检查全部候选 manifest。OCI index 和 Docker manifest list 只选择 `project.target_arch` 对应平台。默认降级保护可以防止旧版本映射静默降低应用版本。
 

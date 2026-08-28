@@ -460,6 +460,31 @@ images:
 			},
 		},
 		{
+			name: "date image defaults to semver sorting",
+			yaml: `version: 1
+project: {}
+update:
+  version_source:
+    type: image
+    image: web
+images:
+  - id: web
+    target: service
+    service: web
+    source: ghcr.io/acme/web
+    channel: date
+    tag_regex: '^[0-9]{8}$'
+    version_regex: '^(?P<version>[0-9]{4})(?P<month>[0-9]{2})(?P<day>[0-9]{2})$'
+    version_template: '{version}.{month}.{day}'
+`,
+			check: func(t *testing.T, got config.Config) {
+				image := got.Images[0]
+				if image.Channel != "date" || image.Sort != "semver" || image.VersionTemplate != "{version}.{month}.{day}" {
+					t.Fatalf("image=%#v", image)
+				}
+			},
+		},
+		{
 			name: "mutable image patch bump",
 			yaml: `version: 1
 project: {}

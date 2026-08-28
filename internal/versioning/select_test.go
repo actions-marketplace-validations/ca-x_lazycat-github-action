@@ -38,6 +38,26 @@ func TestSelectStableAndBeta(t *testing.T) {
 	}
 }
 
+func TestSelectDateNormalizesPaddedSemVerComponents(t *testing.T) {
+	rule := versioning.Rule{
+		Channel:         versioning.ChannelDate,
+		Sort:            versioning.SortSemVer,
+		TagRegex:        regexp.MustCompile(`^[0-9]{8}$`),
+		VersionRegex:    regexp.MustCompile(`^(?P<version>[0-9]{4})(?P<month>[0-9]{2})(?P<day>[0-9]{2})$`),
+		VersionTemplate: "{version}.{month}.{day}",
+	}
+	selection, err := versioning.Select(rule, []versioning.Candidate{
+		{Tag: "20260626", Digest: digest("1"), Created: at(1)},
+		{Tag: "20260101", Digest: digest("2"), Created: at(2)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selection.Candidate.Tag != "20260626" || selection.Version != "2026.6.26" {
+		t.Fatalf("selection=%#v", selection)
+	}
+}
+
 func TestSelectNightlyUsesAMD64CreationTimeAndDigest(t *testing.T) {
 	selection, err := versioning.Select(versioning.Rule{
 		Channel:      versioning.ChannelNightly,

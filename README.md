@@ -4,12 +4,12 @@
 
 `ca-x/lazycat-github-action` checks Docker image versions, updates explicit LazyCat Manifest targets, builds LPK files, creates update pull requests, and attaches validated LPK files to GitHub Releases.
 
-The Action uses [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.5.0`. Its compatibility baseline is `@lazycatcloud/lzc-cli` `2.0.9`.
+The Action uses [`github.com/lib-x/lzc-toolkit-go`](https://github.com/lib-x/lzc-toolkit-go) `v0.6.0`. Its compatibility baseline is `@lazycatcloud/lzc-cli` `2.0.9`.
 
 Current scope:
 
 - Milestone 1: static Web and Exec builds, LPK validation, SHA256, amd64 and arm64 Action binaries.
-- Milestone 2: stable, beta, nightly, and custom OCI checks; LazyCat, direct, and mirror delivery; pull requests; Artifacts; tags; Releases; Release Assets.
+- Milestone 2: stable, beta, date, nightly, and custom OCI checks; LazyCat, direct, and mirror delivery; pull requests; Artifacts; tags; Releases; Release Assets.
 - Milestone 3: LazyCat official developer-platform submission, MiaoMiao private-store submission, complete source-build examples, and the repository Agent Skill.
 
 ## Choose the interface
@@ -239,6 +239,7 @@ With `strategy: pull`, selecting a non-version-source image creates a reviewable
 |---|---|
 | `stable` | Highest valid non-prerelease SemVer by default; may opt into Docker Hub `updated` sorting |
 | `beta` | Highest valid prerelease SemVer by default; may opt into Docker Hub `updated` sorting |
+| `date` | Date-like tags mapped to stable SemVer; sort may be `semver` or Docker Hub `updated` |
 | `nightly` | Newest regex-matched target-platform OCI image creation time |
 | `custom` | Regex filtering with explicit `semver`, `created`, or `updated` sorting |
 
@@ -258,6 +259,21 @@ Beta example:
 channel: beta
 tag_regex: '^v?\d+\.\d+\.\d+-(alpha|beta|rc|preview)\.'
 ```
+
+Date-tag example:
+
+```yaml
+channel: date
+tag_regex: '^[0-9]{8}$'
+version_regex: '^(?P<version>[0-9]{4})(?P<month>[0-9]{2})(?P<day>[0-9]{2})$'
+version_template: '{version}.{month}.{day}'
+```
+
+`date` follows stable-channel SemVer ordering after applying the configured
+regex/template mapping. Numeric SemVer core components are canonicalized after
+template expansion, so `20260626` maps to `2026.6.26` and `20260101` maps to
+`2026.1.1`. Existing templates that explicitly consume zero-padded captures,
+such as `0*(?P<build>[1-9]\d*)`, remain supported.
 
 Docker Hub update-time example:
 
@@ -330,7 +346,7 @@ version_regex: '^(?P<version>\d{8})\.0*(?P<build>[1-9]\d*)$'
 version_template: '{version}.{build}.0' # 20260603.01 -> 20260603.1.0
 ```
 
-The `version` group remains required. Unknown placeholders and expanded values that are not valid SemVer fail closed.
+The `version` group remains required. Unknown placeholders and expanded values that are not valid SemVer fail closed. When a regex/template mapping is configured, leading zeroes in the three numeric SemVer core components are removed before validation; prerelease and build identifiers remain subject to strict SemVer rules.
 
 Registry discovery uses `github.com/google/go-containerregistry`. `tag_regex` and `exclude_regex` run before the Action fetches individual manifests. `max_tags` bounds the raw Registry tag list and defaults to `10000`; set it per image only for a known large upstream, up to `50000`. `max_matching_tags` independently bounds filtered candidates and also defaults to `10000`; it must not exceed `max_tags`. For SemVer sorting, the Action ranks tag names first. For `updated`, it ranks Docker Hub tag metadata first. Both inspect manifests in order only until the first usable configured target is found. Creation-time sorting must inspect every eligible manifest because the target image timestamp is part of the ordering. OCI indexes and Docker manifest lists are reduced to `project.target_arch`. The default downgrade guard prevents an older mapped version from silently lowering the application version.
 

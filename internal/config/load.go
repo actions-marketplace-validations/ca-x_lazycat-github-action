@@ -131,7 +131,7 @@ func applyDefaults(value *Config) {
 		image.Sort = strings.ToLower(strings.TrimSpace(image.Sort))
 		if image.Sort == "" {
 			switch image.Channel {
-			case "stable", "beta":
+			case "stable", "beta", "date":
 				image.Sort = "semver"
 			case "nightly":
 				image.Sort = "created"
@@ -403,7 +403,7 @@ func validateOfficialApplication(application OfficialApplication) error {
 
 func validateImageRule(image Image) error {
 	switch image.Channel {
-	case "stable", "beta":
+	case "stable", "beta", "date":
 		if image.Sort != "semver" && image.Sort != "updated" {
 			return fmt.Errorf("channel %q requires semver or updated sort", image.Channel)
 		}

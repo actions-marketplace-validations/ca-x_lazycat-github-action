@@ -62,6 +62,12 @@
       "mustNotInclude": ["custom shell script", "0.0.0-nightly"]
     },
     {
+      "id": "date-tag-leading-zero-normalization",
+      "prompt": "A GHCR image publishes date tags such as 20260626 and 20260101. Map them to strict SemVer without failing on zero-padded month or day fields.",
+      "mustInclude": ["channel: date", "tag_regex: '^[0-9]{8}$'", "(?P<month>", "(?P<day>", "{version}.{month}.{day}", "2026.6.26"],
+      "mustNotInclude": ["2026.06.26", "custom shell script", "allow_downgrade: true"]
+    },
+    {
       "id": "private-name-fallback",
       "prompt": "A MiaoMiao application already exists and is searchable by application name but not package ID. Configure publishing without APP_ID.",
       "mustInclude": ["stores.private.name", "/api/v1/apps/by-name", "can upload", "404"],

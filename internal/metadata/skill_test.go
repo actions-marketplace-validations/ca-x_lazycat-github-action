@@ -143,6 +143,9 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 	if _, found := seen["tag-filter-version-mapping-separation"]; !found {
 		t.Fatal("evals are missing tag-filter/version-mapping separation coverage")
 	}
+	if _, found := seen["date-tag-leading-zero-normalization"]; !found {
+		t.Fatal("evals are missing date-tag leading-zero normalization coverage")
+	}
 	if _, found := seen["mixed-weekly-lts-version-selection"]; !found {
 		t.Fatal("evals are missing mixed weekly/LTS version-selection coverage")
 	}
@@ -306,8 +309,8 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 	if err := json.Unmarshal(prompts, &promptCases); err != nil {
 		t.Fatal(err)
 	}
-	if len(promptCases) != 21 {
-		t.Fatalf("test-prompts.json cases=%d, want 21", len(promptCases))
+	if len(promptCases) != 22 {
+		t.Fatalf("test-prompts.json cases=%d, want 22", len(promptCases))
 	}
 	promptIDs := make(map[string]string, len(promptCases))
 	for _, prompt := range promptCases {
@@ -325,6 +328,7 @@ func TestRepositorySkillContractAndEvals(t *testing.T) {
 		"release-store-reconciliation":          {"精确命名", "GitHub sha256 digest", "本地 SHA256", "官方商店补交", "喵喵商店", "独立跳过", "不重建", "不改名", "不猜测"},
 		"official-file-upload-stage":            {"本地 LPK 文件", "multipart", "store.official.upload", "store.official.review", "不得打印"},
 		"named-version-template-groups":         {"version", "build", "{version}.{build}.0", "20260603.1.0", "fail closed"},
+		"date-tag-leading-zero-normalization":   {"channel: date", "tag_regex", "version_regex", "month", "day", "2026.6.26", "2026.1.1", "前导零", "兼容"},
 		"private-name-fallback":                 {"stores.private.name", "packageId", "应用名称", "/api/v1/apps/by-name", "404", "停止"},
 		"image-version-downgrade-guard":         {"allow_downgrade: false", "SemVer", "VERSION_DOWNGRADE_BLOCKED", "同版本", "明确确认"},
 		"rust-protobuf-toolchain":               {"Edition 2023", "GitHub Release", "SHA256", "protoc --version", "共享 buildscript", "不得把 Proto 改成 proto3", "不得修改 Rust 源码", "build.rs"},

@@ -56,14 +56,30 @@ The version source answers “which upstream version changes package.yml.” The
 |---|---|
 | `stable` | Highest non-prerelease SemVer by default; sort may be `semver` or Docker Hub `updated` |
 | `beta` | Highest alpha/beta/rc/preview SemVer by default; sort may be `semver` or Docker Hub `updated` |
+| `date` | Date-like tags mapped to stable SemVer; sort may be `semver` or Docker Hub `updated` |
 | `nightly` | `tag_regex` required; newest target-image creation time; sort is `created` |
 | `custom` | `tag_regex` and explicit `semver`, `created`, or Docker Hub `updated` sort required |
 
 Use `exclude_regex` to remove Windows/ARM tags. `version_regex` must contain `(?P<version>...)`; `version_template` defaults to `{version}`. Every named capture is available as an exact placeholder. For example, `^(?P<version>\d{8})\.0*(?P<build>[1-9]\d*)$` plus `{version}.{build}.0` maps `20260603.01` to `20260603.1.0`. Unknown placeholders and non-SemVer expanded values fail closed.
 
+Use `channel: date` for fixed-width date tags that are mapped by a regex/template, for example:
+
+```yaml
+channel: date
+tag_regex: '^[0-9]{8}$'
+version_regex: '^(?P<version>[0-9]{4})(?P<month>[0-9]{2})(?P<day>[0-9]{2})$'
+version_template: '{version}.{month}.{day}'
+```
+
+Date uses stable-channel ordering. After any regex/template mapping, the three
+numeric SemVer core components are canonicalized so padded fields are valid:
+`20260626` becomes `2026.6.26` and `20260101` becomes `2026.1.1`. Explicit
+zero-stripping expressions such as `0*(?P<build>[1-9]\d*)` remain compatible;
+prerelease and build identifiers continue to use strict SemVer validation.
+
 Design `tag_regex` to filter a release family rather than the currently selected immutable version. First inspect representative upstream tags, then keep the four decisions separate:
 
-1. `channel` defines stable, prerelease, nightly, or custom semantics.
+1. `channel` defines stable, prerelease, date, nightly, or custom semantics.
 2. `tag_regex` includes candidates that may appear in future runs.
 3. `version_regex` plus `version_template` extracts and normalizes package SemVer when tag text is nonstandard.
 4. `sort` chooses the winning candidate.
